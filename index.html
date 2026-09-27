@@ -10,7 +10,6 @@ tailwind.config = { theme: { extend: { colors: { 'navy': { DEFAULT: '#1e3a8a', d
 </script>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
 * { font-family: 'Cairo', sans-serif; }
@@ -52,12 +51,22 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
 .task-clickable { cursor: pointer; transition: all 0.15s; }
 .task-clickable:hover { background: #f1f5f9 !important; transform: translateX(-2px); }
 .filter-collapsed { display: none; }
+.loading-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.9); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 15px; }
 </style>
 </head>
 <body class="min-h-screen flex flex-col antialiased">
 
 <div id="toastContainer" class="fixed top-5 left-5 z-[100] flex flex-col gap-2 pointer-events-none"></div>
 <div id="cloudStatus" class="cloud-status cloud-syncing"><i class="fa-solid fa-cloud"></i> <span>جاري الاتصال...</span></div>
+
+<!-- LOADING OVERLAY -->
+<div id="loadingOverlay" class="loading-overlay hidden">
+    <div class="w-20 h-20 rounded-full bg-gradient-to-br from-navy-dark to-sky flex items-center justify-center animate-pulse">
+        <i class="fa-solid fa-car-side text-white text-4xl"></i>
+    </div>
+    <div class="text-navy-dark font-black text-lg">جاري تحميل البيانات...</div>
+    <div class="text-gray-500 font-bold text-sm">يرجى الانتظار</div>
+</div>
 
 <!-- LOGIN -->
 <div id="loginScreen" class="fixed inset-0 z-50 bg-gradient-to-br from-blue-50 via-white to-blue-100 hidden items-center justify-center p-4">
@@ -142,19 +151,20 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
                 <button onclick="switchTab('employees')" class="nav-btn w-full flex items-center gap-4 px-4 py-3 text-sm font-bold text-gray-600 hover:bg-page rounded" data-tab="employees"><i class="fa-solid fa-user-tie w-5 text-center"></i><span>إدارة الموظفين</span></button>
                 <button onclick="switchTab('activity')" class="nav-btn w-full flex items-center gap-4 px-4 py-3 text-sm font-bold text-gray-600 hover:bg-page rounded" data-tab="activity"><i class="fa-solid fa-clock-rotate-left w-5 text-center"></i><span>سجل النشاط</span></button>
                 <button onclick="switchTab('settings')" class="nav-btn w-full flex items-center gap-4 px-4 py-3 text-sm font-bold text-gray-600 hover:bg-page rounded" data-tab="settings"><i class="fa-solid fa-sliders w-5 text-center"></i><span>الإعدادات</span></button>
-                <button onclick="downloadExcelTemplate()" class="w-full flex items-center gap-4 px-4 py-3 text-sm font-bold text-sky hover:bg-blue-50 rounded"><i class="fa-solid fa-file-excel w-5 text-center"></i><span>تحميل قالب Excel</span></button>
-                <button onclick="document.getElementById('excelImportInput').click()" class="w-full flex items-center gap-4 px-4 py-3 text-sm font-bold text-green-700 hover:bg-green-50 rounded"><i class="fa-solid fa-file-import w-5 text-center"></i><span>استيراد عملاء من Excel</span></button>
+                <div class="text-[10px] font-black text-gray-400 px-2 uppercase tracking-widest pt-6 mb-4">Google Sheet</div>
+                <button onclick="manualSyncSheets()" class="w-full flex items-center gap-4 px-4 py-3 text-sm font-bold text-green-700 hover:bg-green-50 rounded"><i class="fa-solid fa-cloud-arrow-up w-5 text-center"></i><span>تصدير فوري إلى Google Sheet</span></button>
+                <button onclick="openSheetsImportModal()" class="w-full flex items-center gap-4 px-4 py-3 text-sm font-bold text-sky hover:bg-blue-50 rounded"><i class="fa-solid fa-cloud-arrow-down w-5 text-center"></i><span>استيراد من Google Sheet</span></button>
+                <button onclick="downloadSheetsTemplate()" class="w-full flex items-center gap-4 px-4 py-3 text-sm font-bold text-amber-700 hover:bg-amber-50 rounded"><i class="fa-solid fa-file-circle-plus w-5 text-center"></i><span>إنشاء قالب Google Sheet</span></button>
             </div>
             <div id="employeeSection" class="hidden">
                 <div class="text-[10px] font-black text-gray-400 px-2 uppercase tracking-widest pt-6 mb-4">حسابي</div>
                 <button onclick="switchTab('myactivity')" class="nav-btn w-full flex items-center gap-4 px-4 py-3 text-sm font-bold text-gray-600 hover:bg-page rounded" data-tab="myactivity"><i class="fa-solid fa-clock-rotate-left w-5 text-center"></i><span>نشاطي</span></button>
             </div>
         </div>
-        <div class="p-4 border-t border-gray-200 text-center"><span class="text-[10px] text-gray-400 font-black uppercase">AutoCRM v9.0</span></div>
+        <div class="p-4 border-t border-gray-200 text-center"><span class="text-[10px] text-gray-400 font-black uppercase">AutoCRM v11.0</span></div>
     </aside>
 
     <main class="flex-1 overflow-y-auto p-4 md:p-8 bg-page">
-        <input type="file" id="excelImportInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleExcelImport(event)">
 
         <section id="tab-dashboard" class="tab-content space-y-6">
             <div class="panel p-4 flex flex-col md:flex-row justify-between items-center gap-4 border-t-4 border-t-navy-dark">
@@ -186,9 +196,13 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
         </section>
 
         <section id="tab-search" class="tab-content hidden space-y-5">
-            <!-- البحث الأساسي -->
             <div class="panel p-5 border-r-4 border-r-navy-dark">
-                <h2 class="text-xl font-black mb-5 text-navy-dark">سجل العملاء</h2>
+                <div class="flex flex-wrap justify-between items-center gap-3 mb-5">
+                    <h2 class="text-xl font-black text-navy-dark">سجل العملاء</h2>
+                    <button onclick="deleteAllCustomers()" class="btn-danger px-5 py-2.5 text-sm rounded flex items-center gap-2">
+                        <i class="fa-solid fa-trash-can"></i> حذف كل العملاء
+                    </button>
+                </div>
                 <div class="flex flex-col sm:flex-row gap-3">
                     <input type="text" id="mainSearchPhone" placeholder="بحث بالاسم / رقم الهاتف / الكود / الرقم القومي..." onkeydown="if(event.key==='Enter'){event.preventDefault();executeCustomerSearch();}" class="flex-1 px-4 py-3 bg-page border border-gray-300 text-sm rounded">
                     <button onclick="executeCustomerSearch()" class="btn-primary px-8 py-3 text-sm rounded"><i class="fa-solid fa-magnifying-glass ml-1"></i> بحث</button>
@@ -196,73 +210,25 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
                 <button onclick="openCustomerModal()" class="btn-primary w-full mt-3 py-3 text-sm rounded flex items-center justify-center gap-2"><i class="fa-solid fa-user-plus"></i> إضافة عميل جديد</button>
             </div>
 
-            <!-- فلاتر البحث -->
             <div class="panel p-5 border-r-4 border-r-sky">
                 <div class="flex justify-between items-center mb-4">
-                    <h3 class="font-black text-base text-navy-dark">
-                        <i class="fa-solid fa-filter text-sky ml-2"></i>فلاتر البحث
-                    </h3>
-                    <button onclick="toggleFilters()" class="text-sky hover:text-navy text-sm font-black p-2" title="فتح/قفل الفلاتر">
-                        <i class="fa-solid fa-chevron-down" id="filtersIcon"></i>
-                    </button>
+                    <h3 class="font-black text-base text-navy-dark"><i class="fa-solid fa-filter text-sky ml-2"></i>فلاتر البحث</h3>
+                    <button onclick="toggleFilters()" class="text-sky hover:text-navy text-sm font-black p-2"><i class="fa-solid fa-chevron-down" id="filtersIcon"></i></button>
                 </div>
-
-                <div id="filtersPanel" class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                    <div>
-                        <label class="block text-xs font-black text-ink-muted mb-1.5">المحافظة</label>
-                        <select id="filterGov" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"><option value="">الكل</option></select>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-black text-ink-muted mb-1.5">المركز/الحي</label>
-                        <input type="text" id="filterDistrict" placeholder="اكتب المركز..." class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-black text-ink-muted mb-1.5">حالة البيع</label>
-                        <select id="filterStatus" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded">
-                            <option value="">الكل</option>
-                            <option value="مفتوحة">مفتوحة</option>
-                            <option value="جاري التقسيط">جاري التقسيط</option>
-                            <option value="منفذة">منفذة</option>
-                            <option value="مفقودة">مفقودة</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-black text-ink-muted mb-1.5">طريقة الدفع</label>
-                        <select id="filterPayMethod" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded">
-                            <option value="">الكل</option>
-                            <option value="كاش">كاش</option>
-                            <option value="تقسيط">تقسيط</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-black text-ink-muted mb-1.5">المركبة</label>
-                        <select id="filterVehicle" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"><option value="">الكل</option></select>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-black text-ink-muted mb-1.5">القناة</label>
-                        <select id="filterChannel" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"><option value="">الكل</option></select>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-black text-ink-muted mb-1.5">جهة التقسيط</label>
-                        <select id="filterFinance" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"><option value="">الكل</option></select>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-black text-ink-muted mb-1.5">من تاريخ</label>
-                        <input type="date" id="filterDateFrom" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-black text-ink-muted mb-1.5">إلى تاريخ</label>
-                        <input type="date" id="filterDateTo" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded">
-                    </div>
+                <div id="filtersPanel" class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3 filter-collapsed">
+                    <div><label class="block text-xs font-black text-ink-muted mb-1.5">المحافظة</label><select id="filterGov" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"><option value="">الكل</option></select></div>
+                    <div><label class="block text-xs font-black text-ink-muted mb-1.5">المركز/الحي</label><input type="text" id="filterDistrict" placeholder="اكتب المركز..." class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"></div>
+                    <div><label class="block text-xs font-black text-ink-muted mb-1.5">حالة البيع</label><select id="filterStatus" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"><option value="">الكل</option><option value="مفتوحة">مفتوحة</option><option value="جاري التقسيط">جاري التقسيط</option><option value="منفذة">منفذة</option><option value="مفقودة">مفقودة</option></select></div>
+                    <div><label class="block text-xs font-black text-ink-muted mb-1.5">طريقة الدفع</label><select id="filterPayMethod" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"><option value="">الكل</option><option value="كاش">كاش</option><option value="تقسيط">تقسيط</option></select></div>
+                    <div><label class="block text-xs font-black text-ink-muted mb-1.5">المركبة</label><select id="filterVehicle" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"><option value="">الكل</option></select></div>
+                    <div><label class="block text-xs font-black text-ink-muted mb-1.5">القناة</label><select id="filterChannel" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"><option value="">الكل</option></select></div>
+                    <div><label class="block text-xs font-black text-ink-muted mb-1.5">جهة التقسيط</label><select id="filterFinance" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"><option value="">الكل</option></select></div>
+                    <div><label class="block text-xs font-black text-ink-muted mb-1.5">من تاريخ</label><input type="date" id="filterDateFrom" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"></div>
+                    <div><label class="block text-xs font-black text-ink-muted mb-1.5">إلى تاريخ</label><input type="date" id="filterDateTo" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"></div>
                 </div>
-
                 <div class="flex flex-wrap gap-2 mt-4">
-                    <button onclick="applyFilters()" class="btn-primary px-6 py-2.5 text-sm rounded flex-1 min-w-[200px]">
-                        <i class="fa-solid fa-filter ml-1"></i> تطبيق الفلاتر
-                    </button>
-                    <button onclick="clearFilters()" class="btn-secondary px-6 py-2.5 text-sm rounded">
-                        <i class="fa-solid fa-rotate-left ml-1"></i> مسح الكل
-                    </button>
+                    <button onclick="applyFilters()" class="btn-primary px-6 py-2.5 text-sm rounded flex-1 min-w-[200px]"><i class="fa-solid fa-filter ml-1"></i> تطبيق الفلاتر</button>
+                    <button onclick="clearFilters()" class="btn-secondary px-6 py-2.5 text-sm rounded"><i class="fa-solid fa-rotate-left ml-1"></i> مسح الكل</button>
                 </div>
                 <div id="filterResultsInfo" class="mt-3 text-xs font-black text-sky hidden"></div>
             </div>
@@ -357,9 +323,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
             <div><label class="block text-xs font-black text-ink-muted mb-1.5">اسم المستخدم *</label><input type="text" id="empUsername" required class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"></div>
             <div><label class="block text-xs font-black text-ink-muted mb-1.5">كلمة المرور *</label><input type="text" id="empPassword" required class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"></div>
             <div><label class="block text-xs font-black text-ink-muted mb-1.5">الهاتف</label><input type="text" id="empPhone" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"></div>
-            <div><label class="block text-xs font-black text-ink-muted mb-1.5">الصلاحية *</label>
-                <select id="empRole" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"><option value="employee">موظف</option><option value="manager">مدير</option></select>
-            </div>
+            <div><label class="block text-xs font-black text-ink-muted mb-1.5">الصلاحية *</label><select id="empRole" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"><option value="employee">موظف</option><option value="manager">مدير</option></select></div>
             <button type="submit" class="btn-primary w-full py-3 text-sm rounded">حفظ</button>
         </form>
     </div>
@@ -390,9 +354,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
                         <label class="block text-xs font-black text-sky mb-1.5">🔑 كود العميل (للبوابة) *</label>
                         <div class="flex gap-2">
                             <input type="text" id="custPassword" required readonly placeholder="سيتم توليده تلقائياً" class="flex-1 px-3 py-2.5 bg-blue-50 border border-sky text-sm rounded font-black tracking-widest text-navy-dark">
-                            <button type="button" onclick="document.getElementById('custPassword').value=generateCustomerCode();" class="btn-secondary px-4 rounded text-xs" title="توليد جديد"><i class="fa-solid fa-rotate"></i></button>
+                            <button type="button" onclick="document.getElementById('custPassword').value=generateCustomerCode();" class="btn-secondary px-4 rounded text-xs"><i class="fa-solid fa-rotate"></i></button>
                         </div>
-                        <div class="text-[10px] text-gray-500 font-bold mt-1">يتولد تلقائياً (3 حروف + 3 أرقام) ويستخدمه العميل للدخول للبوابة مع رقم هاتفه</div>
                     </div>
                 </div>
             </div>
@@ -415,12 +378,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
             <div id="financeSection" class="space-y-4">
                 <h4 class="text-xs font-black text-amber-600 uppercase tracking-wider border-b border-gray-200 pb-2">جـ. بيانات التقسيط / المنتج الأول</h4>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div><label class="block text-xs font-black text-ink-muted mb-1.5">أسلوب الدفع</label>
-                        <select id="custPayMethod" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded">
-                            <option value="كاش">كاش / نقدي</option>
-                            <option value="تقسيط">تقسيط مباشر / بنكي</option>
-                        </select>
-                    </div>
+                    <div><label class="block text-xs font-black text-ink-muted mb-1.5">أسلوب الدفع</label><select id="custPayMethod" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"><option value="كاش">كاش / نقدي</option><option value="تقسيط">تقسيط مباشر / بنكي</option></select></div>
                     <div><label class="block text-xs font-black text-ink-muted mb-1.5">جهة التقسيط</label><select id="custFinanceEntity" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"><option value="">اختر...</option></select></div>
                     <div><label class="block text-xs font-black text-ink-muted mb-1.5">إجمالي سعر البيع</label><input type="number" id="custTotal" value="0" oninput="calcDebt()" placeholder="750000" class="w-full px-3 py-2.5 bg-page border border-gray-300 font-black text-sm rounded"></div>
                     <div><label class="block text-xs font-black text-ink-muted mb-1.5">المقدم المدفوع</label><input type="number" id="custDown" value="0" oninput="calcDebt()" placeholder="150000" class="w-full px-3 py-2.5 bg-page border border-gray-300 font-black text-sm rounded"></div>
@@ -484,11 +442,11 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
                 <div><label class="block text-xs font-black text-amber-700 mb-1.5">المديونية</label><input type="text" id="prodDebt" readonly class="w-full px-3 py-2.5 bg-amber-50 border border-amber-300 font-black text-sm rounded"></div>
             </div>
             <div class="bg-blue-50 p-4 rounded border border-blue-200 space-y-3">
-                <h4 class="text-xs font-black text-navy-dark uppercase border-b border-blue-200 pb-2">🔧 بيانات المركبة الخاصة بالمنتج</h4>
+                <h4 class="text-xs font-black text-navy-dark uppercase border-b border-blue-200 pb-2">🔧 بيانات المركبة</h4>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div><label class="block text-xs font-black text-ink-muted mb-1.5">رقم الشاسيه</label><input type="text" id="prodChassis" placeholder="VIN" class="w-full px-3 py-2.5 bg-white border border-gray-300 text-sm rounded"></div>
                     <div><label class="block text-xs font-black text-ink-muted mb-1.5">رقم الموتور</label><input type="text" id="prodMotor" class="w-full px-3 py-2.5 bg-white border border-gray-300 text-sm rounded"></div>
-                    <div><label class="block text-xs font-black text-ink-muted mb-1.5">الموديل (سنة الصنع)</label><input type="text" id="prodModel" placeholder="2025 / 2026" class="w-full px-3 py-2.5 bg-white border border-gray-300 text-sm rounded"></div>
+                    <div><label class="block text-xs font-black text-ink-muted mb-1.5">الموديل</label><input type="text" id="prodModel" placeholder="2025 / 2026" class="w-full px-3 py-2.5 bg-white border border-gray-300 text-sm rounded"></div>
                 </div>
             </div>
             <div><label class="block text-xs font-black text-ink-muted mb-1.5">ملاحظات</label><textarea id="prodNotes" rows="2" class="w-full px-3 py-2.5 bg-page border border-gray-300 text-sm rounded"></textarea></div>
@@ -508,6 +466,53 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
             <button onclick="closeCustomerDetail()" class="text-white/80 text-2xl"><i class="fa-solid fa-xmark"></i></button>
         </div>
         <div class="p-6 max-h-[75vh] overflow-y-auto" id="customerDetailContent"></div>
+    </div>
+</div>
+
+<!-- SHEETS IMPORT MODAL -->
+<div id="sheetsImportModal" class="fixed inset-0 z-[60] modal-backdrop hidden items-center justify-center p-4">
+    <div class="bg-white w-full max-w-md shadow-2xl rounded-lg modal-anim">
+        <div class="p-4 flex justify-between items-center bg-gradient-to-l from-navy-dark to-navy rounded-t-lg">
+            <h3 class="font-black text-white"><i class="fa-solid fa-cloud-arrow-down text-sky ml-2"></i>استيراد من Google Sheet</h3>
+            <button onclick="closeSheetsImportModal()" class="text-white/80 text-xl"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="p-6 space-y-4">
+            <div class="bg-blue-50 p-4 rounded border border-blue-200 text-sm">
+                <p class="font-bold text-navy-dark mb-2">📋 إزاي الاستيراد بيشتغل؟</p>
+                <ul class="space-y-1 text-xs text-gray-700 list-disc pr-5">
+                    <li>هيقرأ العملاء من تاب <b>Customers_001</b></li>
+                    <li>لو العميل موجود بنفس الكود → يحدّثه</li>
+                    <li>لو مش موجود → يضيفه جديد</li>
+                </ul>
+            </div>
+            <button onclick="executeSheetsImport()" id="sheetsImportBtn" class="btn-primary w-full py-3 text-sm rounded"><i class="fa-solid fa-cloud-arrow-down ml-1"></i> بدء الاستيراد</button>
+            <button onclick="closeSheetsImportModal()" class="btn-secondary w-full py-3 text-sm rounded">إلغاء</button>
+        </div>
+    </div>
+</div>
+
+<!-- DELETE ALL CONFIRM MODAL -->
+<div id="deleteAllModal" class="fixed inset-0 z-[70] modal-backdrop hidden items-center justify-center p-4">
+    <div class="bg-white w-full max-w-md shadow-2xl rounded-lg modal-anim">
+        <div class="p-4 bg-gradient-to-l from-red-600 to-red-700 rounded-t-lg">
+            <h3 class="font-black text-white flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation"></i>تحذير!</h3>
+        </div>
+        <div class="p-6 space-y-4">
+            <p class="font-black text-navy-dark text-lg">حذف كل العملاء؟</p>
+            <div class="bg-red-50 p-4 rounded border-2 border-red-300 text-sm">
+                <p class="font-bold text-red-700 mb-2">⚠️ ده هيمسح:</p>
+                <ul class="space-y-1 text-xs text-red-600 list-disc pr-5">
+                    <li>كل العملاء</li>
+                    <li>كل المنتجات</li>
+                    <li>كل المتابعات</li>
+                </ul>
+                <p class="font-black text-red-700 mt-3">العملية دي مش بترجع! متأكد؟</p>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="confirmDeleteAll()" class="btn-danger flex-1 py-3 text-sm rounded"><i class="fa-solid fa-trash-can ml-1"></i> نعم، احذف الكل</button>
+                <button onclick="closeDeleteAllModal()" class="btn-secondary flex-1 py-3 text-sm rounded">إلغاء</button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -561,7 +566,8 @@ window.authPromise = new Promise((resolve) => {
 </script>
 
 <script>
-// ==================== STATE ====================
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyPAIF5taUzI1s9-HfarRuR3UeQNMrKAwcIY8pATQ_ZsU5kAnwwFLR8iP0ppFtxrGMO/exec';
+
 const DEFAULT_USERS = [{ id: 'u1', username: 'AhmedMH', password: '200900', name: 'أحمد محمود', role: 'manager', phone: '', createdAt: Date.now() }];
 let usersDb = [...DEFAULT_USERS];
 let appData = {
@@ -582,10 +588,8 @@ let lastVisibleDoc = null;
 let hasMoreCustomers = false;
 let loadedCustomers = [];
 let allCustomersCache = [];
-let searchMode = false;
-let filtersActive = false;
+let dashboardLoaded = false;
 
-// ==================== CUSTOMER CODE GENERATOR ====================
 function generateCustomerCode() {
     const L = 'ABCDEFGHJKLMNPQRSTUVWXYZ', D = '0123456789';
     let code;
@@ -603,6 +607,87 @@ function setCloudStatus(status, text) {
     el.className = 'cloud-status cloud-' + status;
     const ic = status === 'online' ? 'fa-cloud' : status === 'syncing' ? 'fa-cloud-arrow-up fa-spin' : 'fa-cloud-slash';
     el.innerHTML = `<i class="fa-solid ${ic}"></i> <span>${text}</span>`;
+}
+
+function showLoading() { document.getElementById('loadingOverlay').classList.remove('hidden'); }
+function hideLoading() { document.getElementById('loadingOverlay').classList.add('hidden'); }
+
+// ==================== GOOGLE SHEETS ====================
+async function manualSyncSheets() {
+    if (!isManager()) return showToast('للمدير فقط', 'error');
+    showToast('جاري التصدير...', 'info');
+    try {
+        const response = await fetch(APPS_SCRIPT_URL + '?action=sync');
+        const result = await response.json();
+        if (result.success) showToast('✅ تم التصدير بنجاح');
+        else showToast('خطأ: ' + result.error, 'error');
+    } catch(e) { showToast('خطأ في الاتصال: ' + e.message, 'error'); }
+}
+
+function openSheetsImportModal() {
+    if (!isManager()) return showToast('للمدير فقط', 'error');
+    const m = document.getElementById('sheetsImportModal');
+    m.classList.remove('hidden'); m.classList.add('flex');
+}
+function closeSheetsImportModal() {
+    const m = document.getElementById('sheetsImportModal');
+    m.classList.add('hidden'); m.classList.remove('flex');
+}
+async function executeSheetsImport() {
+    const btn = document.getElementById('sheetsImportBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-1"></i> جاري الاستيراد...';
+    try {
+        const response = await fetch(APPS_SCRIPT_URL + '?action=import');
+        const result = await response.json();
+        if (result.success) {
+            let imported = 0, updated = 0;
+            for (const c of result.customers) {
+                if (!c.name && !c.phone) continue;
+                if (!c.customerCode) c.customerCode = generateCustomerCode();
+                const existing = appData.customers.find(x => x.password === c.customerCode || x.customerCode === c.customerCode);
+                if (existing) {
+                    const updatedC = { ...existing, ...c, password: c.customerCode };
+                    await saveCustomerToCollection(updatedC);
+                    updated++;
+                } else {
+                    const newC = {
+                        id: 'c' + Date.now() + Math.random().toString(36).slice(2,6),
+                        name: c.name || '', phone: c.phone || '', altPhone: c.altPhone || '',
+                        whatsapp: c.whatsapp || '', natId: c.natId || '',
+                        job: c.job || '', gov: c.gov || '', district: c.district || '',
+                        address: c.address || '', password: c.customerCode,
+                        channel: c.channel || '', interest: c.interest || '',
+                        status: c.status || 'مفتوحة', notes: c.notes || '',
+                        products: [], followups: [],
+                        createdAt: Date.now(), createdBy: currentUser.id,
+                        createdByName: currentUser.name
+                    };
+                    await saveCustomerToCollection(newC);
+                    imported++;
+                }
+            }
+            logActivity('import_customers', `تم استيراد ${imported} + تعديل ${updated}`);
+            showToast(`✅ تم: ${imported} جديد + ${updated} تعديل`);
+            closeSheetsImportModal();
+            allCustomersCache = [];
+            await executeCustomerSearch();
+        } else showToast('خطأ: ' + result.error, 'error');
+    } catch(e) { showToast('خطأ: ' + e.message, 'error'); }
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-down ml-1"></i> بدء الاستيراد';
+}
+async function downloadSheetsTemplate() {
+    if (!isManager()) return showToast('للمدير فقط', 'error');
+    showToast('جاري إنشاء القالب...', 'info');
+    try {
+        const response = await fetch(APPS_SCRIPT_URL + '?action=template');
+        const result = await response.json();
+        if (result.success) {
+            showToast('✅ تم إنشاء القالب');
+            window.open(result.url, '_blank');
+        } else showToast('خطأ: ' + result.error, 'error');
+    } catch(e) { showToast('خطأ: ' + e.message, 'error'); }
 }
 
 // ==================== COLLECTIONS API ====================
@@ -640,29 +725,31 @@ async function logActivityToCollection(type, details, customerCode = '', custome
     } catch(e) {}
 }
 
+// ⚡ تحميل أسرع مع Promise.all (Parallel)
 async function loadCustomersPage(lastCursorDoc = null, pageSize = 20) {
     let q = db.collection('customers').orderBy('createdAt', 'desc').limit(pageSize);
     if (lastCursorDoc) q = q.startAfter(lastCursorDoc);
     const snap = await q.get();
-    const customers = [];
-    for (const doc of snap.docs) {
+
+    // Parallel loading لكل عميل
+    const customers = await Promise.all(snap.docs.map(async (doc) => {
         const c = { id: doc.id, ...doc.data() };
         try {
-            const pSnap = await doc.ref.collection('products').get();
+            const [pSnap, fSnap] = await Promise.all([
+                doc.ref.collection('products').get(),
+                doc.ref.collection('followups').orderBy('createdAt', 'desc').limit(1).get()
+            ]);
             c.products = pSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            const fSnap = await doc.ref.collection('followups').orderBy('createdAt', 'desc').limit(1).get();
             c.followups = fSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         } catch(e) { c.products = []; c.followups = []; }
-        customers.push(c);
-    }
+        return c;
+    }));
+
     return { customers, lastDoc: snap.docs[snap.docs.length - 1] || null, hasMore: snap.size === pageSize };
 }
 
 async function loadAllCustomersForFilter() {
-    let all = [];
-    let lastDoc = null;
-    let hasMore = true;
-    let pages = 0;
+    let all = [], lastDoc = null, hasMore = true, pages = 0;
     while (hasMore && pages < 50) {
         const page = await loadCustomersPage(lastDoc, 100);
         all = all.concat(page.customers);
@@ -681,15 +768,18 @@ async function searchCustomersInCollection(q) {
     try { const s = await db.collection('customers').where('phone', '==', q).get(); s.docs.forEach(add); } catch(e) {}
     try { const s = await db.collection('customers').where('name', '>=', q).where('name', '<=', q + '\uf8ff').limit(20).get(); s.docs.forEach(add); } catch(e) {}
     try { const s = await db.collection('customers').where('natId', '==', q).limit(5).get(); s.docs.forEach(add); } catch(e) {}
-    for (const c of results) {
+
+    await Promise.all(results.map(async (c) => {
         try {
             const docRef = db.collection('customers').doc(c.id);
-            const pSnap = await docRef.collection('products').get();
+            const [pSnap, fSnap] = await Promise.all([
+                docRef.collection('products').get(),
+                docRef.collection('followups').orderBy('createdAt', 'desc').limit(1).get()
+            ]);
             c.products = pSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            const fSnap = await docRef.collection('followups').orderBy('createdAt', 'desc').limit(1).get();
             c.followups = fSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         } catch(e) { c.products = []; c.followups = []; }
-    }
+    }));
     return results;
 }
 
@@ -697,14 +787,15 @@ async function getCustomerFromCollection(id) {
     const doc = await db.collection('customers').doc(id).get();
     if (!doc.exists) return null;
     const c = { id: doc.id, ...doc.data() };
-    const pSnap = await doc.ref.collection('products').get();
+    const [pSnap, fSnap] = await Promise.all([
+        doc.ref.collection('products').get(),
+        doc.ref.collection('followups').orderBy('createdAt', 'desc').get()
+    ]);
     c.products = pSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const fSnap = await doc.ref.collection('followups').orderBy('createdAt', 'desc').get();
     c.followups = fSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     return c;
 }
 
-// ==================== CONNECT ====================
 async function detectAndConnect() {
     setCloudStatus('syncing', 'جاري الاتصال...');
     if (window.authPromise) await window.authPromise;
@@ -726,18 +817,6 @@ async function detectAndConnect() {
     }
     setCloudStatus('online', 'متصل بالسحابة');
     saveToLocal();
-    try {
-        foundRef.onSnapshot(snap => {
-            if (!snap.exists) return;
-            const d = snap.data();
-            if (d.appData) {
-                if (d.appData.config) appData.config = { ...appData.config, ...d.appData.config };
-                if (d.appData.tasks) appData.tasks = d.appData.tasks;
-            }
-            if (d.users && Array.isArray(d.users) && d.users.length) usersDb = d.users;
-            saveToLocal();
-        });
-    } catch(e) {}
 }
 
 async function saveToCloud() {
@@ -753,14 +832,14 @@ async function saveToCloud() {
 
 function saveToLocal() {
     try {
-        localStorage.setItem('autoCrmDataV9', JSON.stringify(appData));
-        localStorage.setItem('autoCrmUsersV9', JSON.stringify(usersDb));
+        localStorage.setItem('autoCrmDataV11', JSON.stringify(appData));
+        localStorage.setItem('autoCrmUsersV11', JSON.stringify(usersDb));
     } catch(e) {}
 }
 function loadFromLocal() {
     try {
-        const d = localStorage.getItem('autoCrmDataV9');
-        const u = localStorage.getItem('autoCrmUsersV9');
+        const d = localStorage.getItem('autoCrmDataV11');
+        const u = localStorage.getItem('autoCrmUsersV11');
         if (d) { const p = JSON.parse(d); if (p.tasks) appData.tasks = p.tasks; if (p.config) appData.config = { ...appData.config, ...p.config }; }
         if (u) { const p = JSON.parse(u); if (Array.isArray(p) && p.length) usersDb = p; }
     } catch(e) {}
@@ -786,7 +865,6 @@ function logActivity(type, details, customerCode = '', customerId = '') {
 function isManager() { return currentUser && currentUser.role === 'manager'; }
 let statusChartInstance, govChartInstance, vehicleChartInstance;
 
-// ==================== INIT ====================
 window.addEventListener('load', async () => {
     loadFromLocal();
     populateDropdowns();
@@ -796,14 +874,12 @@ window.addEventListener('load', async () => {
     try { await detectAndConnect(); } catch(e) { setCloudStatus('offline', 'وضع محلي'); }
 });
 
-// ==================== FILTERS ====================
 function toggleFilters() {
     const panel = document.getElementById('filtersPanel');
     const icon = document.getElementById('filtersIcon');
     panel.classList.toggle('filter-collapsed');
     icon.className = panel.classList.contains('filter-collapsed') ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-up';
 }
-
 function populateFilterDropdowns() {
     const fill = (id, arr) => {
         const el = document.getElementById(id);
@@ -815,7 +891,6 @@ function populateFilterDropdowns() {
     fill('filterChannel', appData.config.channels);
     fill('filterFinance', appData.config.financeEntities);
 }
-
 function getActiveFilters() {
     return {
         gov: document.getElementById('filterGov').value,
@@ -829,88 +904,54 @@ function getActiveFilters() {
         dateTo: document.getElementById('filterDateTo').value
     };
 }
-
-function hasActiveFilters(f) {
-    return !!(f.gov || f.district || f.status || f.payMethod || f.vehicle || f.channel || f.finance || f.dateFrom || f.dateTo);
-}
-
+function hasActiveFilters(f) { return !!(f.gov || f.district || f.status || f.payMethod || f.vehicle || f.channel || f.finance || f.dateFrom || f.dateTo); }
 function filterCustomers(customers, f) {
     return customers.filter(c => {
         if (f.gov && (c.gov || '') !== f.gov) return false;
         if (f.district && !(c.district || '').includes(f.district)) return false;
         if (f.channel && (c.channel || '') !== f.channel) return false;
-        if (f.dateFrom) {
-            const cDate = new Date(Number(c.createdAt || 0));
-            const fromDate = new Date(f.dateFrom);
-            if (cDate < fromDate) return false;
-        }
-        if (f.dateTo) {
-            const cDate = new Date(Number(c.createdAt || 0));
-            const toDate = new Date(f.dateTo);
-            toDate.setHours(23, 59, 59, 999);
-            if (cDate > toDate) return false;
-        }
+        if (f.dateFrom) { const cDate = new Date(Number(c.createdAt || 0)); if (cDate < new Date(f.dateFrom)) return false; }
+        if (f.dateTo) { const cDate = new Date(Number(c.createdAt || 0)); const toDate = new Date(f.dateTo); toDate.setHours(23,59,59,999); if (cDate > toDate) return false; }
         const products = c.products || [];
-        if (f.status) {
-            const hasStatus = products.some(p => (p.status || '').includes(f.status)) || (c.status || '').includes(f.status);
-            if (!hasStatus) return false;
-        }
-        if (f.payMethod) {
-            if (!products.some(p => p.payMethod === f.payMethod)) return false;
-        }
-        if (f.vehicle) {
-            if (!products.some(p => p.vehicle === f.vehicle)) return false;
-        }
-        if (f.finance) {
-            if (!products.some(p => p.financeEntity === f.finance)) return false;
-        }
+        if (f.status) { if (!products.some(p => (p.status || '').includes(f.status)) && !(c.status || '').includes(f.status)) return false; }
+        if (f.payMethod && !products.some(p => p.payMethod === f.payMethod)) return false;
+        if (f.vehicle && !products.some(p => p.vehicle === f.vehicle)) return false;
+        if (f.finance && !products.some(p => p.financeEntity === f.finance)) return false;
         return true;
     });
 }
-
 async function applyFilters() {
     const f = getActiveFilters();
-    if (!hasActiveFilters(f)) {
-        showToast('اختار فلتر واحد على الأقل', 'error');
-        return;
-    }
+    if (!hasActiveFilters(f)) return showToast('اختار فلتر واحد على الأقل', 'error');
     const area = document.getElementById('searchResultsArea');
-    area.innerHTML = '<div class="text-center py-12"><i class="fa-solid fa-spinner fa-spin text-3xl text-sky"></i><div class="mt-3 text-gray-500 font-bold">جاري تحميل كل العملاء للفلترة...</div></div>';
+    area.innerHTML = '<div class="text-center py-12"><i class="fa-solid fa-spinner fa-spin text-3xl text-sky"></i><div class="mt-3 text-gray-500 font-bold">جاري التحميل...</div></div>';
     document.getElementById('loadMoreWrap').classList.add('hidden');
     try {
-        // تحميل كل العملاء
         let baseCustomers = allCustomersCache;
         if (!baseCustomers.length) {
             baseCustomers = await loadAllCustomersForFilter();
             allCustomersCache = baseCustomers;
         }
         const results = filterCustomers(baseCustomers, f);
-        filtersActive = true;
         const info = document.getElementById('filterResultsInfo');
         info.classList.remove('hidden');
-        info.innerHTML = `<i class="fa-solid fa-circle-info ml-1"></i> تم فلترة ${baseCustomers.length} عميل → <span class="text-green-700">${results.length} نتيجة</span>`;
+        info.innerHTML = `<i class="fa-solid fa-circle-info ml-1"></i> فلترة ${baseCustomers.length} → <span class="text-green-700">${results.length} نتيجة</span>`;
         if (results.length === 0) {
-            area.innerHTML = '<div class="panel p-8 text-center"><i class="fa-solid fa-filter-circle-xmark text-gray-300 text-5xl mb-3"></i><div class="text-gray-400 font-bold">مفيش نتائج للفلاتر دي</div></div>';
+            area.innerHTML = '<div class="panel p-8 text-center"><i class="fa-solid fa-filter-circle-xmark text-gray-300 text-5xl mb-3"></i><div class="text-gray-400 font-bold">مفيش نتائج</div></div>';
             return;
         }
         area.innerHTML = `<div class="text-xs font-black text-ink-muted mb-3">نتائج الفلترة (${results.length} عميل)</div>` + results.map(c => renderCustomerCard(c)).join('');
-    } catch(e) {
-        console.error(e);
-        area.innerHTML = `<div class="panel p-8 text-center text-red-500 font-bold">خطأ: ${e.message}</div>`;
-    }
+    } catch(e) { area.innerHTML = `<div class="panel p-8 text-center text-red-500 font-bold">خطأ: ${e.message}</div>`; }
 }
-
 function clearFilters() {
     ['filterGov','filterDistrict','filterStatus','filterPayMethod','filterVehicle','filterChannel','filterFinance','filterDateFrom','filterDateTo'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
     });
     document.getElementById('filterResultsInfo').classList.add('hidden');
-    filtersActive = false;
     executeCustomerSearch();
 }
 
-// ==================== LOGIN ====================
 function setLoginType(type) {
     currentLoginType = type;
     const tabA = document.getElementById('tabAdminLogin'), tabC = document.getElementById('tabCustomerLogin');
@@ -933,7 +974,7 @@ function setLoginType(type) {
 }
 
 function checkLoginState() {
-    const s = sessionStorage.getItem('autoCrmUserV9');
+    const s = sessionStorage.getItem('autoCrmUserV11');
     if (s) {
         const u = JSON.parse(s);
         if (u.roleType === 'customer') { currentUser = u; showCustomerPortal(); }
@@ -945,7 +986,7 @@ function checkLoginState() {
     } else showLogin();
 }
 
-function handleLogin(e) {
+async function handleLogin(e) {
     e.preventDefault();
     const u = document.getElementById('loginUser').value.trim();
     const p = document.getElementById('loginPass').value;
@@ -953,15 +994,18 @@ function handleLogin(e) {
         const user = usersDb.find(x => x.username === u && x.password === p);
         if (user) {
             currentUser = { ...user, roleType: 'admin' };
-            sessionStorage.setItem('autoCrmUserV9', JSON.stringify(currentUser));
+            sessionStorage.setItem('autoCrmUserV11', JSON.stringify(currentUser));
             logActivity('login', `دخول ${user.role === 'manager' ? 'المدير' : 'الموظف'} ${user.name}`);
-            showApp(); showToast(`مرحباً، ${user.name}`);
+            showLoading();
+            await showApp();
+            hideLoading();
+            showToast(`مرحباً، ${user.name}`);
         } else showToast('بيانات غير صحيحة!', 'error');
     } else {
         const cust = appData.customers.find(c => (c.phone === u || c.altPhone === u || c.password === u) && (c.password === p));
         if (cust) {
             currentUser = { ...cust, roleType: 'customer' };
-            sessionStorage.setItem('autoCrmUserV9', JSON.stringify(currentUser));
+            sessionStorage.setItem('autoCrmUserV11', JSON.stringify(currentUser));
             showCustomerPortal(); showToast(`مرحباً، ${cust.name}`);
         } else showToast('خطأ في البيانات!', 'error');
     }
@@ -969,8 +1013,9 @@ function handleLogin(e) {
 
 function handleLogout() {
     if (currentUser && currentUser.roleType === 'admin') logActivity('logout', `خروج ${currentUser.name}`);
-    sessionStorage.removeItem('autoCrmUserV9');
+    sessionStorage.removeItem('autoCrmUserV11');
     currentUser = null;
+    dashboardLoaded = false;
     document.getElementById('loginForm').reset();
     switchTab('dashboard');
     ['mainHeader','mainLayout','customerPortalScreen'].forEach(id => {
@@ -980,11 +1025,9 @@ function handleLogout() {
     showLogin();
 }
 
-function showLogin() {
-    const el = document.getElementById('loginScreen');
-    el.classList.remove('hidden'); el.classList.add('flex');
-}
-function showApp() {
+function showLogin() { const el = document.getElementById('loginScreen'); el.classList.remove('hidden'); el.classList.add('flex'); }
+
+async function showApp() {
     document.getElementById('loginScreen').classList.add('hidden'); document.getElementById('loginScreen').classList.remove('flex');
     document.getElementById('customerPortalScreen').classList.add('hidden'); document.getElementById('customerPortalScreen').classList.remove('flex');
     document.getElementById('mainHeader').classList.remove('hidden'); document.getElementById('mainHeader').classList.add('flex');
@@ -997,7 +1040,27 @@ function showApp() {
     const a = document.getElementById('adminSection'), e = document.getElementById('employeeSection');
     if (isManager()) { a.classList.remove('hidden'); e.classList.add('hidden'); }
     else { a.classList.add('hidden'); e.classList.remove('hidden'); }
-    updateDashboard(); renderDashboardTasks(); renderFullTasks();
+
+    // 🆕 تحميل العملاء تلقائي عند الدخول
+    await loadCustomersInitial();
+
+    updateDashboard();
+    renderDashboardTasks();
+    renderFullTasks();
+}
+
+// 🆕 تحميل العملاء في الخلفية عند فتح التطبيق
+async function loadCustomersInitial() {
+    try {
+        const page = await loadCustomersPage(null, 30);
+        loadedCustomers = page.customers;
+        lastVisibleDoc = page.lastDoc;
+        hasMoreCustomers = page.hasMore;
+        appData.customers = page.customers; // للاستخدام في البحث السريع
+        dashboardLoaded = true;
+    } catch(e) {
+        console.error('Load error:', e);
+    }
 }
 
 function showCustomerPortal() {
@@ -1021,11 +1084,8 @@ function showCustomerPortal() {
     else el.innerHTML = '<div class="text-center text-gray-400 py-6 font-bold">لا توجد متابعات.</div>';
 }
 
-// ==================== NAV ====================
 function switchTab(tabId) {
-    if (!isManager() && ['settings','activity','employees'].includes(tabId)) {
-        showToast('للمدير فقط', 'error'); tabId = 'dashboard';
-    }
+    if (!isManager() && ['settings','activity','employees'].includes(tabId)) { showToast('للمدير فقط', 'error'); tabId = 'dashboard'; }
     document.querySelectorAll('.tab-content').forEach(el => { el.classList.add('hidden'); el.classList.remove('block'); });
     const target = document.getElementById('tab-' + tabId);
     if (target) { target.classList.remove('hidden'); target.classList.add('block'); }
@@ -1107,7 +1167,6 @@ function renderEmployeesList() {
         const today = new Date().toISOString().split('T')[0];
         const actions = (appData.activityLog || []).filter(a => a.userId === u.id);
         const todayActions = actions.filter(a => new Date(a.timestamp).toISOString().split('T')[0] === today).length;
-        const lastLogin = actions.find(a => a.type === 'login');
         const statusBadge = todayActions > 0 ? '<span class="badge badge-green">نشط</span>' : '<span class="badge badge-gray">غير نشط</span>';
         const roleTag = u.role === 'manager' ? '<span class="role-tag role-manager">مدير</span>' : '<span class="role-tag role-employee">موظف</span>';
         return `<div class="panel p-4 border-r-4 ${u.role === 'manager' ? 'border-r-purple-500' : 'border-r-sky'} flex flex-col md:flex-row justify-between gap-4 items-start md:items-center">
@@ -1119,7 +1178,6 @@ function renderEmployeesList() {
                         <span><i class="fa-solid fa-user text-sky ml-1"></i>${u.username}</span>
                         ${u.phone ? `<span><i class="fa-solid fa-phone text-sky ml-1"></i>${u.phone}</span>` : ''}
                         <span><i class="fa-solid fa-bolt text-amber-500 ml-1"></i>${todayActions} عملية</span>
-                        ${lastLogin ? `<span><i class="fa-solid fa-right-to-bracket text-green-500 ml-1"></i>${new Date(lastLogin.timestamp).toLocaleString('ar-EG',{dateStyle:'short',timeStyle:'short'})}</span>` : ''}
                     </div>
                 </div>
             </div>
@@ -1139,10 +1197,7 @@ function updateEmployeesKpi() {
     document.getElementById('kpiActiveToday').innerText = activeIds.size;
     document.getElementById('kpiTodayActions').innerText = (appData.activityLog || []).filter(a => new Date(a.timestamp).toISOString().split('T')[0] === today).length;
 }
-function viewEmployeeActivity(id) {
-    switchTab('activity');
-    setTimeout(() => { document.getElementById('activityFilterUser').value = id; renderActivityLog(); }, 100);
-}
+function viewEmployeeActivity(id) { switchTab('activity'); setTimeout(() => { document.getElementById('activityFilterUser').value = id; renderActivityLog(); }, 100); }
 
 // ==================== ACTIVITY ====================
 function populateActivityFilters() {
@@ -1181,6 +1236,7 @@ function activityItem(a, hideName = false) {
         'add_customer': { ic: 'fa-user-plus', cl: 'text-sky bg-blue-100' },
         'edit_customer': { ic: 'fa-user-pen', cl: 'text-amber-600 bg-amber-100' },
         'delete_customer': { ic: 'fa-user-minus', cl: 'text-red-600 bg-red-100' },
+        'delete_all_customers': { ic: 'fa-trash-can', cl: 'text-red-700 bg-red-200' },
         'add_product': { ic: 'fa-car', cl: 'text-navy bg-blue-100' },
         'edit_product': { ic: 'fa-car-side', cl: 'text-amber-600 bg-amber-100' },
         'delete_product': { ic: 'fa-car-burst', cl: 'text-red-500 bg-red-100' },
@@ -1210,87 +1266,6 @@ function activityItem(a, hideName = false) {
     </div>`;
 }
 
-// ==================== EXCEL ====================
-const EXCEL_HEADERS = ['الاسم', 'الرقم القومي', 'المهنة', 'الهاتف', 'بديل', 'واتساب', 'المحافظة', 'المركز/الحي', 'العنوان', 'كود العميل', 'القناة', 'المركبة', 'الحالة', 'الإجمالي', 'المقدم', 'القسط الشهري', 'جهة التقسيط', 'الشاسيه', 'الموتور', 'الموديل', 'تاريخ التسليم', 'ملاحظات'];
-function downloadExcelTemplate() {
-    if (!isManager()) return showToast('للمدير فقط', 'error');
-    const ws = XLSX.utils.aoa_to_sheet([EXCEL_HEADERS, ['أحمد محمد', '29501011234567', 'مهندس', '01012345678', '', '', 'القاهرة', 'مدينة نصر', 'شارع 9', 'ABC123', 'فيسبوك', 'تويوتا كورولا', 'مفتوحة', '750000', '150000', '8500', 'بنك مصر', 'VIN123456', 'ENG789', '2025', '2025-01-15', 'عميل مهتم']]);
-    ws['!cols'] = EXCEL_HEADERS.map(() => ({ wch: 18 }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'العملاء');
-    XLSX.writeFile(wb, 'autocrm-customers-template.xlsx');
-    showToast('تم تحميل القالب');
-}
-async function handleExcelImport(event) {
-    if (!isManager()) { event.target.value = ''; return showToast('للمدير فقط', 'error'); }
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        try {
-            const data = new Uint8Array(e.target.result);
-            const wb = XLSX.read(data, { type: 'array' });
-            const sheet = wb.Sheets[wb.SheetNames[0]];
-            const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-            if (!rows.length) { showToast('الملف فارغ!', 'error'); event.target.value = ''; return; }
-            if (!confirm(`سيتم استيراد ${rows.length} عميل. متابعة؟`)) { event.target.value = ''; return; }
-            let imported = 0;
-            for (const row of rows) {
-                const name = String(row['الاسم'] || '').trim();
-                const phone = String(row['الهاتف'] || '').trim();
-                if (!name || !phone) continue;
-                let code = String(row['كود العميل'] || '').trim();
-                if (!code) code = generateCustomerCode();
-                const total = Number(row['الإجمالي']) || 0;
-                const down = Number(row['المقدم']) || 0;
-                const custId = 'c' + Date.now() + Math.random().toString(36).slice(2,5);
-                const prodId = 'p' + Date.now() + Math.random().toString(36).slice(2,5);
-                const fp = {
-                    id: prodId, vehicle: String(row['المركبة'] || '').trim() || 'غير محدد',
-                    payMethod: String(row['جهة التقسيط'] || '').trim() ? 'تقسيط' : 'كاش',
-                    financeEntity: String(row['جهة التقسيط'] || '').trim(),
-                    stage: '', status: String(row['الحالة'] || 'مفتوحة').trim(),
-                    total, down, monthly: Number(row['القسط الشهري']) || 0,
-                    deliveryDate: String(row['تاريخ التسليم'] || '').trim(),
-                    chassis: String(row['الشاسيه'] || '').trim(),
-                    motor: String(row['الموتور'] || '').trim(),
-                    model: String(row['الموديل'] || '').trim(),
-                    debt: Math.max(0, total - down), notes: '', createdAt: Date.now(),
-                    createdBy: currentUser.id, createdByName: currentUser.name
-                };
-                const customer = {
-                    id: custId, name,
-                    natId: String(row['الرقم القومي'] || '').trim(),
-                    job: String(row['المهنة'] || '').trim(), phone,
-                    altPhone: String(row['بديل'] || '').trim(),
-                    whatsapp: String(row['واتساب'] || '').trim(),
-                    gov: String(row['المحافظة'] || '').trim(),
-                    district: String(row['المركز/الحي'] || '').trim(),
-                    address: String(row['العنوان'] || '').trim(),
-                    password: code,
-                    channel: String(row['القناة'] || '').trim(),
-                    interest: String(row['المركبة'] || '').trim(),
-                    status: String(row['الحالة'] || 'مفتوحة').trim(),
-                    notes: String(row['ملاحظات'] || '').trim(),
-                    products: [fp], followups: [],
-                    createdAt: Date.now() + imported,
-                    createdBy: currentUser.id, createdByName: currentUser.name
-                };
-                await saveCustomerToCollection(customer);
-                appData.customers.push(customer);
-                imported++;
-            }
-            logActivity('import_customers', `تم استيراد ${imported} عميل من Excel`);
-            saveData(); updateDashboard();
-            showToast(`تم استيراد ${imported} عميل بنجاح`);
-            allCustomersCache = [];
-            if (document.getElementById('tab-search').classList.contains('block')) executeCustomerSearch();
-        } catch(err) { showToast('خطأ في قراءة الملف!', 'error'); }
-        event.target.value = '';
-    };
-    reader.readAsArrayBuffer(file);
-}
-
 // ==================== DROPDOWNS ====================
 function populateDropdowns() {
     const fill = (id, arr, ph) => {
@@ -1308,7 +1283,7 @@ function populateDropdowns() {
     fill('prodStage', appData.config.installmentStages, 'اختر المرحلة');
 }
 
-// ==================== CUSTOMER MODAL ====================
+// ==================== CUSTOMER ====================
 async function openCustomerModal(id) {
     const m = document.getElementById('customerModal');
     m.classList.remove('hidden'); m.classList.add('flex');
@@ -1394,16 +1369,65 @@ async function saveCustomerData(e) {
         };
         const newCustomer = { ...baseData, products: [firstProduct], followups: [], createdAt: Date.now(), createdBy: currentUser.id, createdByName: currentUser.name };
         await saveCustomerToCollection(newCustomer);
-        appData.customers.push(newCustomer);
+        appData.customers.unshift(newCustomer);
         logActivity('add_customer', `إضافة: ${baseData.name}`, baseData.password, baseData.id);
         showToast('تم التسجيل - الكود: ' + baseData.password);
     }
     allCustomersCache = [];
-    saveData(); closeCustomerModal(); updateDashboard(); renderFullTasks(); renderDashboardTasks();
+    saveData(); closeCustomerModal();
+    // 🆕 إعادة تحميل بعد الحفظ
+    await loadCustomersInitial();
+    updateDashboard();
     if (document.getElementById('tab-search').classList.contains('block')) executeCustomerSearch();
 }
 
-// ==================== PRODUCT ====================
+// 🆕 حذف كل العملاء
+function deleteAllCustomers() {
+    if (!isManager()) return showToast('للمدير فقط', 'error');
+    const m = document.getElementById('deleteAllModal');
+    m.classList.remove('hidden'); m.classList.add('flex');
+}
+function closeDeleteAllModal() {
+    const m = document.getElementById('deleteAllModal');
+    m.classList.add('hidden'); m.classList.remove('flex');
+}
+async function confirmDeleteAll() {
+    closeDeleteAllModal();
+    showLoading();
+    try {
+        // احذف كل العملاء + subcollections
+        let total = 0;
+        let hasMore = true;
+        while (hasMore) {
+            const snap = await db.collection('customers').limit(50).get();
+            if (snap.empty) { hasMore = false; break; }
+            for (const doc of snap.docs) {
+                try {
+                    const pSnap = await doc.ref.collection('products').get();
+                    for (const p of pSnap.docs) await p.ref.delete();
+                    const fSnap = await doc.ref.collection('followups').get();
+                    for (const f of fSnap.docs) await f.ref.delete();
+                    await doc.ref.delete();
+                    total++;
+                } catch(e) {}
+            }
+            hasMore = snap.size === 50;
+        }
+        logActivity('delete_all_customers', `حذف كل العملاء (${total} عميل)`);
+        appData.customers = [];
+        loadedCustomers = [];
+        allCustomersCache = [];
+        await loadCustomersInitial();
+        updateDashboard();
+        executeCustomerSearch();
+        showToast(`✅ تم حذف ${total} عميل`);
+    } catch(e) {
+        showToast('خطأ: ' + e.message, 'error');
+    }
+    hideLoading();
+}
+
+// ==================== PRODUCTS ====================
 async function openProductModal(custId, prodId) {
     const m = document.getElementById('productModal');
     m.classList.remove('hidden'); m.classList.add('flex');
@@ -1476,9 +1500,10 @@ async function saveProductData(e) {
     const c = await getCustomerFromCollection(custId);
     logActivity(prodId ? 'edit_product' : 'add_product', `${prodId ? 'تعديل' : 'إضافة'} منتج لـ ${c ? c.name : ''}`, c ? (c.customerCode || '') : '', custId);
     allCustomersCache = [];
-    saveData(); closeProductModal(); updateDashboard();
+    saveData(); closeProductModal();
+    await loadCustomersInitial();
+    updateDashboard();
     if (currentDetailCustomerId === custId) openCustomerDetail(custId);
-    if (document.getElementById('tab-search').classList.contains('block')) executeCustomerSearch();
     showToast('تم الحفظ');
 }
 async function deleteProduct(custId, prodId) {
@@ -1488,13 +1513,14 @@ async function deleteProduct(custId, prodId) {
     await db.collection('customers').doc(custId).collection('products').doc(prodId).delete();
     logActivity('delete_product', `حذف منتج من ${c ? c.name : ''}`, c ? (c.customerCode || '') : '', custId);
     allCustomersCache = [];
-    saveData(); updateDashboard();
+    saveData();
+    await loadCustomersInitial();
+    updateDashboard();
     if (currentDetailCustomerId === custId) openCustomerDetail(custId);
-    if (document.getElementById('tab-search').classList.contains('block')) executeCustomerSearch();
     showToast('تم الحذف');
 }
 
-// ==================== FOLLOWUP ====================
+// ==================== FOLLOWUPS ====================
 function openFollowupModal(custId) {
     const c = appData.customers.find(x => x.id === custId);
     const name = c ? c.name : '';
@@ -1526,9 +1552,10 @@ async function saveFollowupData(e) {
     appData.tasks.push({ id: 't' + Date.now(), customerId: custId, date: data.date, notes: `[${data.reason}] ${data.notes}`, completed: false, createdAt: Date.now(), byName: currentUser.name });
     logActivity('add_followup', `متابعة لـ ${c.name} - ${data.reason}`, c.customerCode || '', custId);
     allCustomersCache = [];
-    saveData(); closeFollowupModal(); updateDashboard(); renderFullTasks(); renderDashboardTasks();
+    saveData(); closeFollowupModal();
+    await loadCustomersInitial();
+    updateDashboard(); renderFullTasks(); renderDashboardTasks();
     if (currentDetailCustomerId === custId) openCustomerDetail(custId);
-    if (document.getElementById('tab-search').classList.contains('block')) executeCustomerSearch();
     showToast('تم الحفظ');
 }
 
@@ -1560,7 +1587,6 @@ async function openCustomerDetail(custId) {
                 <div><span class="text-xs text-ink-muted font-bold block">المركبة المطلوبة</span><b>${c.interest || '-'}</b></div>
                 <div><span class="text-xs text-ink-muted font-bold block">حالة البيع</span>${sb(c.status)}</div>
                 ${c.notes ? `<div class="md:col-span-3"><span class="text-xs text-ink-muted font-bold block">ملاحظات</span><b class="text-gray-700">${c.notes}</b></div>` : ''}
-                ${c.createdByName ? `<div class="md:col-span-2"><span class="text-xs text-ink-muted font-bold block">أضيف بواسطة</span><b class="text-navy">${c.createdByName}</b></div>` : ''}
             </div>
         </div>
         <div class="bg-blue-50 p-4 rounded border border-blue-200">
@@ -1573,7 +1599,7 @@ async function openCustomerDetail(custId) {
                     ${c.phone ? `<a href="tel:${c.phone}" class="btn-secondary py-2 text-xs rounded text-center"><i class="fa-solid fa-phone"></i> اتصال</a>` : ''}
                     ${(c.whatsapp || c.altPhone) ? `<a href="https://wa.me/${(c.whatsapp || c.altPhone).replace(/^0/, '20')}" target="_blank" class="btn-secondary py-2 text-xs rounded text-center text-green-700"><i class="fa-brands fa-whatsapp"></i> واتس</a>` : ''}
                 </div>
-                ${isManager() ? `<button onclick="deleteCustomer('${c.id}')" class="btn-danger w-full py-2 text-xs rounded"><i class="fa-solid fa-trash ml-1"></i> حذف</button>` : '<div class="text-[10px] text-gray-500 text-center font-bold pt-1">🔒 الحذف للمدير</div>'}
+                ${isManager() ? `<button onclick="deleteCustomer('${c.id}')" class="btn-danger w-full py-2 text-xs rounded"><i class="fa-solid fa-trash ml-1"></i> حذف</button>` : ''}
             </div>
         </div>
     </div>
@@ -1582,7 +1608,7 @@ async function openCustomerDetail(custId) {
     if (!c.products || c.products.length === 0) html += `<div class="text-center text-gray-400 py-6 font-bold bg-page rounded border border-dashed border-gray-300">لا توجد منتجات.</div>`;
     else html += c.products.map((p, i) => `<div class="bg-white border border-gray-200 rounded p-4">
         <div class="flex justify-between items-start mb-3">
-            <div class="flex items-center gap-2 flex-wrap"><span class="badge badge-blue">منتج #${i + 1}</span><b class="text-navy-dark">${p.vehicle}</b>${sb(p.status)}${p.model ? `<span class="badge badge-gray">موديل ${p.model}</span>` : ''}</div>
+            <div class="flex items-center gap-2 flex-wrap"><span class="badge badge-blue">منتج #${i + 1}</span><b class="text-navy-dark">${p.vehicle}</b>${sb(p.status)}</div>
             <div class="flex gap-2">
                 <button onclick="openProductModal('${c.id}','${p.id}')" class="text-sky hover:text-navy text-sm p-1"><i class="fa-solid fa-pen"></i></button>
                 ${isManager() ? `<button onclick="deleteProduct('${c.id}','${p.id}')" class="text-red-400 hover:text-red-600 text-sm p-1"><i class="fa-solid fa-trash"></i></button>` : ''}
@@ -1591,17 +1617,8 @@ async function openCustomerDetail(custId) {
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs mb-2">
             <div><span class="text-ink-muted font-bold block">الدفع</span><b>${p.payMethod}</b></div>
             <div><span class="text-ink-muted font-bold block">الجهة</span><b>${p.financeEntity || '-'}</b></div>
-            <div><span class="text-ink-muted font-bold block">المرحلة</span><b>${p.stage || '-'}</b></div>
             <div><span class="text-ink-muted font-bold block">الإجمالي</span><b>${Number(p.total || 0).toLocaleString()}</b></div>
-            <div><span class="text-ink-muted font-bold block">المقدم</span><b>${Number(p.down || 0).toLocaleString()}</b></div>
             <div><span class="text-ink-muted font-bold block">المديونية</span><b class="text-amber-700">${Number(p.debt || 0).toLocaleString()}</b></div>
-            ${p.monthly ? `<div><span class="text-ink-muted font-bold block">القسط</span><b>${Number(p.monthly).toLocaleString()}</b></div>` : ''}
-            ${p.deliveryDate ? `<div><span class="text-ink-muted font-bold block">التسليم/البيع</span><b>${p.deliveryDate}</b></div>` : ''}
-        </div>
-        <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs bg-blue-50 p-3 rounded border border-blue-100">
-            <div><span class="text-ink-muted font-bold block">رقم الشاسيه</span><b>${p.chassis || '-'}</b></div>
-            <div><span class="text-ink-muted font-bold block">رقم الموتور</span><b>${p.motor || '-'}</b></div>
-            <div><span class="text-ink-muted font-bold block">الموديل</span><b>${p.model || '-'}</b></div>
         </div>
     </div>`).join('');
     html += `</div>
@@ -1626,7 +1643,6 @@ async function openCustomerDetail(custId) {
 }
 function closeCustomerDetail() { document.getElementById('customerDetailModal').classList.add('hidden'); document.getElementById('customerDetailModal').classList.remove('flex'); currentDetailCustomerId = null; }
 
-// ==================== DELETE CUSTOMER ====================
 async function deleteCustomer(id) {
     if (!isManager()) return showToast('للمدير فقط', 'error');
     if (!confirm('حذف هذا العميل؟')) return;
@@ -1644,8 +1660,11 @@ async function deleteCustomer(id) {
     appData.customers = appData.customers.filter(x => x.id !== id);
     appData.tasks = appData.tasks.filter(t => t.customerId !== id);
     allCustomersCache = [];
-    saveData(); updateDashboard(); renderFullTasks(); renderDashboardTasks();
-    closeCustomerDetail(); executeCustomerSearch();
+    saveData();
+    await loadCustomersInitial();
+    updateDashboard(); renderFullTasks(); renderDashboardTasks();
+    closeCustomerDetail();
+    if (document.getElementById('tab-search').classList.contains('block')) executeCustomerSearch();
     showToast('تم الحذف');
 }
 
@@ -1671,9 +1690,13 @@ async function executeCustomerSearch() {
     document.getElementById('loadMoreWrap').classList.add('hidden');
     try {
         if (!q) {
-            searchMode = false;
-            filtersActive = false;
             document.getElementById('filterResultsInfo').classList.add('hidden');
+            // لو محملين من قبل، استخدمهم
+            if (loadedCustomers.length > 0) {
+                area.innerHTML = `<div class="text-xs font-black text-ink-muted mb-3">آخر ${loadedCustomers.length} عميل</div>` + loadedCustomers.map(c => renderCustomerCard(c)).join('');
+                if (hasMoreCustomers) document.getElementById('loadMoreWrap').classList.remove('hidden');
+                return;
+            }
             const page = await loadCustomersPage(null, 20);
             loadedCustomers = page.customers;
             lastVisibleDoc = page.lastDoc;
@@ -1682,20 +1705,17 @@ async function executeCustomerSearch() {
                 area.innerHTML = `<div class="panel p-8 text-center"><i class="fa-solid fa-user-slash text-gray-300 text-5xl mb-3"></i><div class="text-gray-400 font-bold mb-4">لا يوجد عملاء بعد</div><button onclick="openCustomerModal()" class="btn-primary px-6 py-3 text-sm rounded inline-flex items-center gap-2"><i class="fa-solid fa-user-plus"></i> إضافة عميل جديد</button></div>`;
                 return;
             }
-            area.innerHTML = `<div class="text-xs font-black text-ink-muted mb-3">آخر ${page.customers.length} عميل (الأحدث أولاً)</div>` + page.customers.map(c => renderCustomerCard(c)).join('');
+            area.innerHTML = `<div class="text-xs font-black text-ink-muted mb-3">آخر ${page.customers.length} عميل</div>` + page.customers.map(c => renderCustomerCard(c)).join('');
             if (hasMoreCustomers) document.getElementById('loadMoreWrap').classList.remove('hidden');
         } else {
-            searchMode = true;
             const results = await searchCustomersInCollection(q);
             if (results.length === 0) {
-                area.innerHTML = `<div class="panel p-8 text-center"><i class="fa-solid fa-user-slash text-gray-300 text-5xl mb-3"></i><div class="text-gray-400 font-bold mb-4">لا يوجد نتائج لـ "${q}"</div><button onclick="openCustomerModal()" class="btn-primary px-6 py-3 text-sm rounded inline-flex items-center gap-2"><i class="fa-solid fa-user-plus"></i> إضافة عميل جديد</button></div>`;
+                area.innerHTML = `<div class="panel p-8 text-center"><i class="fa-solid fa-user-slash text-gray-300 text-5xl mb-3"></i><div class="text-gray-400 font-bold mb-4">لا يوجد نتائج لـ "${q}"</div></div>`;
                 return;
             }
-            area.innerHTML = `<div class="text-xs font-black text-ink-muted mb-3">نتائج البحث عن "${q}": ${results.length}</div>` + results.map(c => renderCustomerCard(c)).join('');
+            area.innerHTML = `<div class="text-xs font-black text-ink-muted mb-3">نتائج: ${results.length}</div>` + results.map(c => renderCustomerCard(c)).join('');
         }
-    } catch(e) {
-        area.innerHTML = `<div class="panel p-8 text-center text-red-500 font-bold">خطأ: ${e.message}</div>`;
-    }
+    } catch(e) { area.innerHTML = `<div class="panel p-8 text-center text-red-500 font-bold">خطأ: ${e.message}</div>`; }
 }
 async function loadMoreCustomers() {
     const btn = document.getElementById('loadMoreBtn');
@@ -1711,9 +1731,7 @@ async function loadMoreCustomers() {
         if (hasMoreCustomers) {
             btn.disabled = false;
             btn.innerHTML = '<i class="fa-solid fa-chevron-down ml-1"></i> تحميل المزيد';
-        } else {
-            document.getElementById('loadMoreWrap').classList.add('hidden');
-        }
+        } else document.getElementById('loadMoreWrap').classList.add('hidden');
     } catch(e) {
         btn.disabled = false;
         btn.innerHTML = '<i class="fa-solid fa-chevron-down ml-1"></i> تحميل المزيد';
@@ -1740,16 +1758,6 @@ function renderCustomerCard(c) {
                 ${td > 0 ? `<span class="badge badge-yellow">مديونية: ${td.toLocaleString()}</span>` : ''}
             </div>
         </div>
-        ${lp ? `<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 bg-blue-50 p-3 rounded border border-blue-100">
-            <div><div class="text-[10px] font-black text-ink-muted uppercase mb-1">آخر منتج</div><div class="text-sm font-black text-navy-dark">${lp.vehicle || '-'}</div></div>
-            <div><div class="text-[10px] font-black text-ink-muted uppercase mb-1">الدفع</div><div class="text-sm font-black text-navy-dark">${lp.payMethod || '-'}</div></div>
-            <div><div class="text-[10px] font-black text-ink-muted uppercase mb-1">المرحلة</div><div class="text-sm font-black text-navy-dark">${lp.stage || '-'}</div></div>
-            <div><div class="text-[10px] font-black text-ink-muted uppercase mb-1">المديونية</div><div class="text-sm font-black text-amber-700">${Number(lp.debt || 0).toLocaleString()}</div></div>
-        </div>` : ''}
-        ${lf ? `<div class="mb-4 text-xs bg-page p-3 rounded border border-gray-200">
-            <div class="font-black text-ink-muted mb-1">🔔 آخر متابعة:</div>
-            <div class="flex flex-wrap gap-2 items-center"><span class="badge badge-blue">${lf.reason}</span><span class="text-gray-500 font-bold">${lf.date}</span><span class="text-gray-700">${lf.notes}</span></div>
-        </div>` : ''}
         <div class="flex flex-wrap gap-2 pt-3 border-t border-gray-200">
             <button onclick="openCustomerDetail('${c.id}')" class="btn-secondary text-xs px-4 py-2 rounded"><i class="fa-solid fa-eye ml-1"></i> عرض</button>
             <button onclick="openProductModal('${c.id}')" class="btn-primary text-xs px-4 py-2 rounded"><i class="fa-solid fa-plus ml-1"></i> منتج</button>
@@ -1784,7 +1792,7 @@ function renderDashboardTasks() {
         const c = appData.customers.find(x => x.id === t.customerId);
         return `<div class="flex items-start gap-3 p-3 bg-page border border-gray-200 rounded task-clickable" onclick="openCustomerDetail('${t.customerId}')">
             <button onclick="event.stopPropagation();toggleTaskDone('${t.id}')" class="w-6 h-6 border-2 border-sky hover:bg-blue-100 rounded mt-0.5 shrink-0"></button>
-            <div class="flex-1"><div class="font-black text-navy-dark text-sm">${c ? c.name : 'عميل محذوف'}</div><div class="text-xs text-gray-600 mt-1">${t.notes}</div><div class="text-[10px] text-sky font-black mt-1">${t.date} • <span class="text-navy">اضغط لفتح ملف العميل</span></div></div>
+            <div class="flex-1"><div class="font-black text-navy-dark text-sm">${c ? c.name : 'عميل محذوف'}</div><div class="text-xs text-gray-600 mt-1">${t.notes}</div><div class="text-[10px] text-sky font-black mt-1">${t.date}</div></div>
         </div>`;
     }).join('');
 }
@@ -1803,7 +1811,6 @@ function renderFullTasks() {
                 <div>
                     <div class="font-black text-navy-dark text-sm ${t.completed ? 'line-through opacity-60' : ''}">${c ? c.name : 'عميل محذوف'}</div>
                     <div class="text-xs text-gray-600 mt-1">${t.notes}</div>
-                    ${t.byName ? `<div class="text-[10px] text-gray-400 font-bold mt-1">بواسطة: ${t.byName}</div>` : ''}
                 </div>
                 <div class="text-[10px] font-black ${overdue ? 'text-red-600' : 'text-gray-500'} shrink-0 text-left">${t.date}${overdue ? '<br>(متأخرة)' : ''}${t.completed ? '<br>✓ تمت' : ''}</div>
             </div></div>
@@ -1887,11 +1894,12 @@ function showToast(msg, type = 'success') {
     c.appendChild(el);
     setTimeout(() => { el.style.transition = 'opacity 0.3s'; el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3000);
 }
+
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { closeCustomerModal(); closeFollowupModal(); closeProductModal(); closeCustomerDetail(); closeEmployeeModal(); }
+    if (e.key === 'Escape') { closeCustomerModal(); closeFollowupModal(); closeProductModal(); closeCustomerDetail(); closeEmployeeModal(); closeSheetsImportModal(); closeDeleteAllModal(); }
 });
 
-console.log('✅ AutoCRM v9.0 (with filters) loaded');
+console.log('✅ AutoCRM v11.0 - Fast Loading + Delete All');
 </script>
 </body>
 </html>
