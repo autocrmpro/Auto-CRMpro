@@ -10,6 +10,7 @@ tailwind.config = { theme: { extend: { colors: { 'navy': { DEFAULT: '#1e3a8a', d
 </script>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
 * { font-family: 'Cairo', sans-serif; }
@@ -52,6 +53,18 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
 .task-clickable:hover { background: #f1f5f9 !important; transform: translateX(-2px); }
 .filter-collapsed { display: none; }
 .loading-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.9); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 15px; }
+.drop-overlay { position: fixed; inset: 0; z-index: 9998; background: rgba(30, 58, 138, 0.85); backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center; padding: 20px; pointer-events: none; }
+.drop-overlay.active { display: flex; pointer-events: all; }
+.drop-zone { border: 4px dashed #7dd3fc; border-radius: 24px; padding: 60px 80px; text-align: center; background: rgba(255, 255, 255, 0.1); animation: dropPulse 1.5s ease-in-out infinite; max-width: 600px; transition: all 0.2s; }
+.drop-zone.dragover { background: rgba(255, 255, 255, 0.2); border-color: #fff; transform: scale(1.05); }
+@keyframes dropPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02); } }
+.drop-zone-icon { width: 100px; height: 100px; margin: 0 auto 24px; border-radius: 50%; background: linear-gradient(135deg, #3b82f6, #0ea5e9); display: flex; align-items: center; justify-content: center; animation: bounceIcon 1.2s ease-in-out infinite; }
+@keyframes bounceIcon { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+.drop-zone-icon i { font-size: 48px; color: #fff; }
+.drop-zone-title { font-size: 28px; font-weight: 900; color: #fff; margin-bottom: 12px; }
+.drop-zone-subtitle { font-size: 14px; color: #bae6fd; font-weight: 700; margin-bottom: 20px; }
+.drop-zone-formats { display: inline-flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.drop-format-badge { background: rgba(255, 255, 255, 0.2); color: #fff; padding: 6px 14px; border-radius: 99px; font-size: 12px; font-weight: 900; border: 1px solid rgba(255, 255, 255, 0.3); }
 </style>
 </head>
 <body class="min-h-screen flex flex-col antialiased">
@@ -59,7 +72,10 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
 <div id="toastContainer" class="fixed top-5 left-5 z-[100] flex flex-col gap-2 pointer-events-none"></div>
 <div id="cloudStatus" class="cloud-status cloud-syncing"><i class="fa-solid fa-cloud"></i> <span>جاري الاتصال...</span></div>
 
-<!-- LOADING OVERLAY -->
+<input type="file" id="importLocalFile" accept=".xlsx,.xls,.csv" 
+       style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;z-index:-1;"
+       onchange="handleLocalFileImport(event)">
+
 <div id="loadingOverlay" class="loading-overlay hidden">
     <div class="w-20 h-20 rounded-full bg-gradient-to-br from-navy-dark to-sky flex items-center justify-center animate-pulse">
         <i class="fa-solid fa-car-side text-white text-4xl"></i>
@@ -153,19 +169,24 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
                 <button onclick="switchTab('settings')" class="nav-btn w-full flex items-center gap-4 px-4 py-3 text-sm font-bold text-gray-600 hover:bg-page rounded" data-tab="settings"><i class="fa-solid fa-sliders w-5 text-center"></i><span>الإعدادات</span></button>
                 <div class="text-[10px] font-black text-gray-400 px-2 uppercase tracking-widest pt-6 mb-4">Google Sheet</div>
                 <button onclick="manualSyncSheets()" class="w-full flex items-center gap-4 px-4 py-3 text-sm font-bold text-green-700 hover:bg-green-50 rounded"><i class="fa-solid fa-cloud-arrow-up w-5 text-center"></i><span>تصدير فوري إلى Google Sheet</span></button>
-                <button onclick="openSheetsImportModal()" class="w-full flex items-center gap-4 px-4 py-3 text-sm font-bold text-sky hover:bg-blue-50 rounded"><i class="fa-solid fa-cloud-arrow-down w-5 text-center"></i><span>استيراد من Google Sheet</span></button>
-                <button onclick="downloadSheetsTemplate()" class="w-full flex items-center gap-4 px-4 py-3 text-sm font-bold text-amber-700 hover:bg-amber-50 rounded"><i class="fa-solid fa-file-circle-plus w-5 text-center"></i><span>إنشاء قالب Google Sheet</span></button>
+                <button type="button" onclick="openImportFilePicker()" class="w-full flex items-center gap-4 px-4 py-3 text-sm font-bold text-purple-700 hover:bg-purple-50 rounded">
+                    <i class="fa-solid fa-file-import w-5 text-center"></i>
+                    <span>استيراد من ملف (Excel / CSV)</span>
+                </button>
+                <div class="mx-4 mt-2 p-2 bg-sky/10 border border-sky/30 rounded text-center">
+                    <i class="fa-solid fa-hand-pointer text-sky"></i>
+                    <span class="text-[10px] font-black text-sky">أو اسحب الملف وارميه في الصفحة</span>
+                </div>
             </div>
             <div id="employeeSection" class="hidden">
                 <div class="text-[10px] font-black text-gray-400 px-2 uppercase tracking-widest pt-6 mb-4">حسابي</div>
                 <button onclick="switchTab('myactivity')" class="nav-btn w-full flex items-center gap-4 px-4 py-3 text-sm font-bold text-gray-600 hover:bg-page rounded" data-tab="myactivity"><i class="fa-solid fa-clock-rotate-left w-5 text-center"></i><span>نشاطي</span></button>
             </div>
         </div>
-        <div class="p-4 border-t border-gray-200 text-center"><span class="text-[10px] text-gray-400 font-black uppercase">AutoCRM v11.0</span></div>
+        <div class="p-4 border-t border-gray-200 text-center"><span class="text-[10px] text-gray-400 font-black uppercase">AutoCRM v19.0</span></div>
     </aside>
 
     <main class="flex-1 overflow-y-auto p-4 md:p-8 bg-page">
-
         <section id="tab-dashboard" class="tab-content space-y-6">
             <div class="panel p-4 flex flex-col md:flex-row justify-between items-center gap-4 border-t-4 border-t-navy-dark">
                 <div class="flex items-center gap-3">
@@ -199,9 +220,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
             <div class="panel p-5 border-r-4 border-r-navy-dark">
                 <div class="flex flex-wrap justify-between items-center gap-3 mb-5">
                     <h2 class="text-xl font-black text-navy-dark">سجل العملاء</h2>
-                    <button onclick="deleteAllCustomers()" class="btn-danger px-5 py-2.5 text-sm rounded flex items-center gap-2">
-                        <i class="fa-solid fa-trash-can"></i> حذف كل العملاء
-                    </button>
+                    <button onclick="deleteAllCustomers()" class="btn-danger px-5 py-2.5 text-sm rounded flex items-center gap-2"><i class="fa-solid fa-trash-can"></i> حذف كل العملاء</button>
                 </div>
                 <div class="flex flex-col sm:flex-row gap-3">
                     <input type="text" id="mainSearchPhone" placeholder="بحث بالاسم / رقم الهاتف / الكود / الرقم القومي..." onkeydown="if(event.key==='Enter'){event.preventDefault();executeCustomerSearch();}" class="flex-1 px-4 py-3 bg-page border border-gray-300 text-sm rounded">
@@ -469,29 +488,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
     </div>
 </div>
 
-<!-- SHEETS IMPORT MODAL -->
-<div id="sheetsImportModal" class="fixed inset-0 z-[60] modal-backdrop hidden items-center justify-center p-4">
-    <div class="bg-white w-full max-w-md shadow-2xl rounded-lg modal-anim">
-        <div class="p-4 flex justify-between items-center bg-gradient-to-l from-navy-dark to-navy rounded-t-lg">
-            <h3 class="font-black text-white"><i class="fa-solid fa-cloud-arrow-down text-sky ml-2"></i>استيراد من Google Sheet</h3>
-            <button onclick="closeSheetsImportModal()" class="text-white/80 text-xl"><i class="fa-solid fa-xmark"></i></button>
-        </div>
-        <div class="p-6 space-y-4">
-            <div class="bg-blue-50 p-4 rounded border border-blue-200 text-sm">
-                <p class="font-bold text-navy-dark mb-2">📋 إزاي الاستيراد بيشتغل؟</p>
-                <ul class="space-y-1 text-xs text-gray-700 list-disc pr-5">
-                    <li>هيقرأ العملاء من تاب <b>Customers_001</b></li>
-                    <li>لو العميل موجود بنفس الكود → يحدّثه</li>
-                    <li>لو مش موجود → يضيفه جديد</li>
-                </ul>
-            </div>
-            <button onclick="executeSheetsImport()" id="sheetsImportBtn" class="btn-primary w-full py-3 text-sm rounded"><i class="fa-solid fa-cloud-arrow-down ml-1"></i> بدء الاستيراد</button>
-            <button onclick="closeSheetsImportModal()" class="btn-secondary w-full py-3 text-sm rounded">إلغاء</button>
-        </div>
-    </div>
-</div>
-
-<!-- DELETE ALL CONFIRM MODAL -->
+<!-- DELETE ALL MODAL -->
 <div id="deleteAllModal" class="fixed inset-0 z-[70] modal-backdrop hidden items-center justify-center p-4">
     <div class="bg-white w-full max-w-md shadow-2xl rounded-lg modal-anim">
         <div class="p-4 bg-gradient-to-l from-red-600 to-red-700 rounded-t-lg">
@@ -501,16 +498,50 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
             <p class="font-black text-navy-dark text-lg">حذف كل العملاء؟</p>
             <div class="bg-red-50 p-4 rounded border-2 border-red-300 text-sm">
                 <p class="font-bold text-red-700 mb-2">⚠️ ده هيمسح:</p>
-                <ul class="space-y-1 text-xs text-red-600 list-disc pr-5">
-                    <li>كل العملاء</li>
-                    <li>كل المنتجات</li>
-                    <li>كل المتابعات</li>
-                </ul>
+                <ul class="space-y-1 text-xs text-red-600 list-disc pr-5"><li>كل العملاء</li><li>كل المنتجات</li><li>كل المتابعات</li></ul>
                 <p class="font-black text-red-700 mt-3">العملية دي مش بترجع! متأكد؟</p>
             </div>
             <div class="flex gap-3">
                 <button onclick="confirmDeleteAll()" class="btn-danger flex-1 py-3 text-sm rounded"><i class="fa-solid fa-trash-can ml-1"></i> نعم، احذف الكل</button>
                 <button onclick="closeDeleteAllModal()" class="btn-secondary flex-1 py-3 text-sm rounded">إلغاء</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- COLUMN MAPPING MODAL -->
+<div id="columnMappingModal" class="fixed inset-0 z-[80] modal-backdrop hidden items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white w-full max-w-3xl shadow-2xl my-auto rounded-lg modal-anim">
+        <div class="p-4 flex justify-between items-center bg-gradient-to-l from-navy-dark to-navy rounded-t-lg">
+            <h3 class="font-black text-white"><i class="fa-solid fa-table-columns ml-2"></i>ربط أعمدة الملف</h3>
+            <button onclick="closeColumnMappingModal()" class="text-white/80 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="p-6 max-h-[75vh] overflow-y-auto">
+            <div class="bg-amber-50 p-4 rounded border-2 border-amber-300 mb-5">
+                <label class="block text-sm font-black text-navy-dark mb-2">
+                    <i class="fa-solid fa-table-list ml-2"></i>اختر الورقة (Sheet) اللي عايز تستورد منها:
+                </label>
+                <select id="sheetSelector" onchange="reloadSheetData()" class="w-full px-4 py-3 bg-white border-2 border-amber-400 text-sm font-black rounded">
+                    <option value="">— جاري التحميل... —</option>
+                </select>
+                <p class="text-xs text-amber-700 font-bold mt-2">💡 اختار الورقة اللي فيها بيانات العملاء (مثلاً "Overview" أو "Customers_001")</p>
+            </div>
+
+            <div class="bg-blue-50 p-4 rounded border border-blue-200 mb-5">
+                <p class="text-sm font-black text-navy-dark mb-2">📋 تم اكتشاف <span id="mappingRowCount" class="text-sky">0</span> صف و <span id="mappingColCount" class="text-sky">0</span> عمود</p>
+                <p class="text-xs text-gray-600 font-bold">ربط الأعمدة تلقائيًا. عدّل يدويًا لو فيه عمود مش مربوط صح. الحقول المعلَّمة بـ <span class="text-red-600">*</span> إلزامية.</p>
+            </div>
+            
+            <div id="mappingFieldsContainer" class="space-y-3"></div>
+            
+            <div class="mt-5 p-4 bg-page rounded border border-gray-200">
+                <p class="text-xs font-black text-navy-dark mb-2">👁️ معاينة أول صف من الملف:</p>
+                <div id="mappingPreview" class="text-xs text-gray-600 font-bold overflow-x-auto"></div>
+            </div>
+            
+            <div class="flex justify-end gap-3 pt-5 mt-5 border-t border-gray-200">
+                <button type="button" onclick="closeColumnMappingModal()" class="btn-secondary px-6 py-3 text-sm rounded">إلغاء</button>
+                <button type="button" onclick="confirmImportFromMapping()" class="btn-primary px-8 py-3 text-sm rounded"><i class="fa-solid fa-check ml-1"></i> استيراد الآن</button>
             </div>
         </div>
     </div>
@@ -544,6 +575,19 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
     </main>
 </div>
 
+<div id="dropOverlay" class="drop-overlay">
+    <div id="dropZone" class="drop-zone">
+        <div class="drop-zone-icon"><i class="fa-solid fa-file-arrow-up"></i></div>
+        <div class="drop-zone-title">ارمي الملف هنا</div>
+        <div class="drop-zone-subtitle">سيتم استيراده تلقائيًا إلى النظام</div>
+        <div class="drop-zone-formats">
+            <span class="drop-format-badge">Excel (.xlsx)</span>
+            <span class="drop-format-badge">Excel (.xls)</span>
+            <span class="drop-format-badge">CSV</span>
+        </div>
+    </div>
+</div>
+
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -566,7 +610,7 @@ window.authPromise = new Promise((resolve) => {
 </script>
 
 <script>
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyPAIF5taUzI1s9-HfarRuR3UeQNMrKAwcIY8pATQ_ZsU5kAnwwFLR8iP0ppFtxrGMO/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxFyNJ8oF4td5y9aZZO-thYNJqjl-gAMhPsXXFh7Gv8LuL0g8pO8a_pFx_zTtvotI2s/exec';
 
 const DEFAULT_USERS = [{ id: 'u1', username: 'AhmedMH', password: '200900', name: 'أحمد محمود', role: 'manager', phone: '', createdAt: Date.now() }];
 let usersDb = [...DEFAULT_USERS];
@@ -588,7 +632,11 @@ let lastVisibleDoc = null;
 let hasMoreCustomers = false;
 let loadedCustomers = [];
 let allCustomersCache = [];
-let dashboardLoaded = false;
+
+let pendingImportRows = [];
+let pendingImportHeaders = [];
+let pendingWorkbook = null;
+let currentSheetName = '';
 
 function generateCustomerCode() {
     const L = 'ABCDEFGHJKLMNPQRSTUVWXYZ', D = '0123456789';
@@ -609,85 +657,454 @@ function setCloudStatus(status, text) {
     el.innerHTML = `<i class="fa-solid ${ic}"></i> <span>${text}</span>`;
 }
 
-function showLoading() { document.getElementById('loadingOverlay').classList.remove('hidden'); }
-function hideLoading() { document.getElementById('loadingOverlay').classList.add('hidden'); }
+function showLoading() { 
+    const el = document.getElementById('loadingOverlay');
+    if (!el) return;
+    el.classList.remove('hidden');
+    clearTimeout(window.__loadingTimeout);
+    window.__loadingTimeout = setTimeout(() => { el.classList.add('hidden'); }, 15000);
+}
+function hideLoading() { 
+    clearTimeout(window.__loadingTimeout);
+    const el = document.getElementById('loadingOverlay');
+    if (el) el.classList.add('hidden');
+}
 
-// ==================== GOOGLE SHEETS ====================
+// ==================== GOOGLE SHEET ====================
 async function manualSyncSheets() {
     if (!isManager()) return showToast('للمدير فقط', 'error');
-    showToast('جاري التصدير...', 'info');
+    showLoading();
+    showToast('جاري التصدير إلى Google Sheet...', 'info');
     try {
         const response = await fetch(APPS_SCRIPT_URL + '?action=sync');
         const result = await response.json();
         if (result.success) showToast('✅ تم التصدير بنجاح');
         else showToast('خطأ: ' + result.error, 'error');
-    } catch(e) { showToast('خطأ في الاتصال: ' + e.message, 'error'); }
+    } catch(e) { showToast('خطأ: ' + e.message, 'error'); }
+    hideLoading();
 }
 
-function openSheetsImportModal() {
+async function triggerImmediateSync() {
+    try { await fetch(APPS_SCRIPT_URL + '?action=sync'); } catch(e) {}
+}
+
+// ==================== IMPORT ====================
+function openImportFilePicker() {
     if (!isManager()) return showToast('للمدير فقط', 'error');
-    const m = document.getElementById('sheetsImportModal');
-    m.classList.remove('hidden'); m.classList.add('flex');
+    const inp = document.getElementById('importLocalFile');
+    if (!inp) return showToast('خطأ: حقل الملف غير موجود', 'error');
+    inp.value = '';
+    if (inp.showPicker) { try { inp.showPicker(); return; } catch(e) {} }
+    inp.click();
 }
-function closeSheetsImportModal() {
-    const m = document.getElementById('sheetsImportModal');
-    m.classList.add('hidden'); m.classList.remove('flex');
+
+async function handleLocalFileImport(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['xlsx','xls','csv'].includes(ext)) {
+        showToast('صيغة الملف غير مدعومة! اختر xlsx أو xls أو csv', 'error');
+        event.target.value = '';
+        return;
+    }
+    await processImportFile(file);
+    event.target.value = '';
 }
-async function executeSheetsImport() {
-    const btn = document.getElementById('sheetsImportBtn');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-1"></i> جاري الاستيراد...';
-    try {
-        const response = await fetch(APPS_SCRIPT_URL + '?action=import');
-        const result = await response.json();
-        if (result.success) {
-            let imported = 0, updated = 0;
-            for (const c of result.customers) {
-                if (!c.name && !c.phone) continue;
-                if (!c.customerCode) c.customerCode = generateCustomerCode();
-                const existing = appData.customers.find(x => x.password === c.customerCode || x.customerCode === c.customerCode);
-                if (existing) {
-                    const updatedC = { ...existing, ...c, password: c.customerCode };
-                    await saveCustomerToCollection(updatedC);
-                    updated++;
-                } else {
-                    const newC = {
-                        id: 'c' + Date.now() + Math.random().toString(36).slice(2,6),
-                        name: c.name || '', phone: c.phone || '', altPhone: c.altPhone || '',
-                        whatsapp: c.whatsapp || '', natId: c.natId || '',
-                        job: c.job || '', gov: c.gov || '', district: c.district || '',
-                        address: c.address || '', password: c.customerCode,
-                        channel: c.channel || '', interest: c.interest || '',
-                        status: c.status || 'مفتوحة', notes: c.notes || '',
-                        products: [], followups: [],
-                        createdAt: Date.now(), createdBy: currentUser.id,
-                        createdByName: currentUser.name
-                    };
-                    await saveCustomerToCollection(newC);
-                    imported++;
-                }
+
+async function processImportFile(file) {
+    if (!file) return;
+    showLoading();
+    showToast('جاري قراءة الملف: ' + file.name, 'info');
+    
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const wb = XLSX.read(data, { type: 'array' });
+            
+            console.log('📚 أوراق الملف:', wb.SheetNames);
+            pendingWorkbook = wb;
+            
+            const selector = document.getElementById('sheetSelector');
+            selector.innerHTML = wb.SheetNames.map(name => {
+                const sheet = wb.Sheets[name];
+                const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', blankrows: false });
+                return `<option value="${name}">${name} (${rows.length} صف)</option>`;
+            }).join('');
+            
+            const bestSheet = findBestSheet(wb);
+            selector.value = bestSheet;
+            console.log('🎯 أفضل ورقة:', bestSheet);
+            
+            const modal = document.getElementById('columnMappingModal');
+            modal.classList.remove('hidden'); modal.classList.add('flex');
+            
+            hideLoading();
+            loadSheetData(bestSheet);
+            
+        } catch(err) {
+            console.error('❌ خطأ في قراءة الملف:', err);
+            showToast('خطأ: ' + err.message, 'error');
+            hideLoading();
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function findBestSheet(wb) {
+    let bestSheet = wb.SheetNames[0];
+    let bestScore = -1;
+    const keyWords = ['الاسم', 'الهاتف', 'name', 'phone', 'المركبة', 'vehicle', 'المحافظة'];
+    
+    wb.SheetNames.forEach(name => {
+        try {
+            const sheet = wb.Sheets[name];
+            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', blankrows: false });
+            if (!rows.length) return;
+            let score = rows.length * 0.1;
+            for (let i = 0; i < Math.min(5, rows.length); i++) {
+                const row = rows[i];
+                if (!Array.isArray(row)) continue;
+                row.forEach(cell => {
+                    const val = String(cell || '').trim().toLowerCase();
+                    if (keyWords.some(k => val.includes(k.toLowerCase()))) score += 10;
+                });
             }
-            logActivity('import_customers', `تم استيراد ${imported} + تعديل ${updated}`);
-            showToast(`✅ تم: ${imported} جديد + ${updated} تعديل`);
-            closeSheetsImportModal();
-            allCustomersCache = [];
-            await executeCustomerSearch();
-        } else showToast('خطأ: ' + result.error, 'error');
-    } catch(e) { showToast('خطأ: ' + e.message, 'error'); }
-    btn.disabled = false;
-    btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-down ml-1"></i> بدء الاستيراد';
+            const nameLower = name.toLowerCase();
+            if (nameLower.includes('overview') || nameLower.includes('customer') || nameLower.includes('عميل')) score += 100;
+            if (nameLower.includes('index') || nameLower.includes('activity') || nameLower.includes('log') || nameLower.includes('followup')) score -= 200;
+            if (score > bestScore) { bestScore = score; bestSheet = name; }
+        } catch(e) {}
+    });
+    return bestSheet;
 }
-async function downloadSheetsTemplate() {
-    if (!isManager()) return showToast('للمدير فقط', 'error');
-    showToast('جاري إنشاء القالب...', 'info');
+
+function loadSheetData(sheetName) {
+    if (!pendingWorkbook) return;
+    const sheet = pendingWorkbook.Sheets[sheetName];
+    if (!sheet) return;
+    currentSheetName = sheetName;
+    const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', blankrows: false });
+    
+    console.log(`📄 ورقة "${sheetName}": ${rawRows.length} صف`);
+    
+    if (!rawRows.length) {
+        document.getElementById('mappingRowCount').innerText = '0';
+        document.getElementById('mappingColCount').innerText = '0';
+        document.getElementById('mappingFieldsContainer').innerHTML = '<div class="text-center text-red-500 font-bold py-8">هذه الورقة فاضية!</div>';
+        document.getElementById('mappingPreview').innerHTML = '';
+        return;
+    }
+    
+    const knownKeywords = ['الاسم', 'اسم', 'name', 'الهاتف', 'هاتف', 'phone', 'الموبايل', 'المركبة', 'السيارة', 'المحافظة', 'العنوان', 'mobile', 'كود'];
+    let headerRowIndex = -1;
+    let bestScore = 0;
+    const scanLimit = Math.min(10, rawRows.length);
+    
+    for (let i = 0; i < scanLimit; i++) {
+        const row = rawRows[i];
+        if (!Array.isArray(row)) continue;
+        let score = 0;
+        row.forEach(cell => {
+            const val = String(cell || '').trim().toLowerCase();
+            if (!val) return;
+            if (knownKeywords.some(k => val.includes(k.toLowerCase()))) score += 3;
+            else if (val.length > 0 && val.length < 40) score += 1;
+        });
+        if (score > bestScore) { bestScore = score; headerRowIndex = i; }
+    }
+    
+    if (headerRowIndex === -1 || bestScore < 3) {
+        document.getElementById('mappingFieldsContainer').innerHTML = '<div class="text-center text-red-500 font-bold py-8">لم أتمكن من العثور على صف العناوين في هذه الورقة!<br><br>جرّب ورقة أخرى من القائمة فوق.</div>';
+        document.getElementById('mappingPreview').innerHTML = '';
+        return;
+    }
+    
+    const headers = rawRows[headerRowIndex].map((h, i) => {
+        const s = String(h || '').trim();
+        return s || `عمود_${i + 1}`;
+    });
+    
+    const rows = [];
+    for (let i = headerRowIndex + 1; i < rawRows.length; i++) {
+        const rawRow = rawRows[i];
+        if (!Array.isArray(rawRow)) continue;
+        const obj = {};
+        let hasData = false;
+        headers.forEach((h, idx) => {
+            const val = rawRow[idx];
+            obj[h] = val !== undefined && val !== null ? val : '';
+            if (String(val || '').trim()) hasData = true;
+        });
+        if (hasData) rows.push(obj);
+    }
+    
+    console.log(`📊 ${rows.length} صف فعلي`);
+    pendingImportRows = rows;
+    pendingImportHeaders = headers;
+    renderMappingFields(headers, rows);
+}
+
+function reloadSheetData() {
+    const sheetName = document.getElementById('sheetSelector').value;
+    if (!sheetName) return;
+    loadSheetData(sheetName);
+}
+
+function renderMappingFields(headers, rows) {
+    document.getElementById('mappingRowCount').innerText = rows.length;
+    document.getElementById('mappingColCount').innerText = headers.length;
+    
+    const fields = [
+        { key: 'name', label: 'الاسم', required: true, aliases: ['الاسم', 'الاسم الكامل', 'اسم العميل', 'اسم', 'name', 'Name', 'fullname', 'full_name', 'customer', 'client'] },
+        { key: 'phone', label: 'رقم الهاتف', required: true, aliases: ['الهاتف', 'رقم الهاتف', 'الهاتف الأساسي', 'رقم الهاتف الأساسي', 'الموبايل', 'موبايل', 'phone', 'Phone', 'mobile', 'Mobile', 'telephone', 'tel', 'رقم الموبايل', 'الخط'] },
+        { key: 'vehicle', label: 'المركبة / السيارة', required: false, aliases: ['المركبة المطلوبة', 'المركبة', 'السيارة', 'العربية', 'vehicle', 'Vehicle', 'car', 'Car', 'الطراز', 'نوع السيارة', 'المركبه'] },
+        { key: 'gov', label: 'المحافظة', required: false, aliases: ['المحافظة', 'محافظة', 'gov', 'governorate', 'Governorate', 'govName', 'المنطقة'] },
+        { key: 'district', label: 'المركز / الحي', required: false, aliases: ['المركز', 'الحي', 'المركز/الحي', 'district', 'District', 'area', 'منطقة', 'المدينة', 'city'] },
+        { key: 'address', label: 'العنوان', required: false, aliases: ['العنوان', 'العنوان التفصيلي', 'address', 'Address', 'street', 'الشارع'] },
+        { key: 'natId', label: 'الرقم القومي', required: false, aliases: ['الرقم القومي', 'القومي', 'natId', 'national_id', 'nationalId', 'nid'] },
+        { key: 'job', label: 'المهنة', required: false, aliases: ['المهنة', 'الوظيفة', 'job', 'Job', 'occupation', 'work'] },
+        { key: 'channel', label: 'قناة التواصل', required: false, aliases: ['القناة', 'قناة التواصل', 'channel', 'Channel', 'source', 'المصدر', 'قناة'] },
+        { key: 'financeEntity', label: 'جهة التقسيط', required: false, aliases: ['جهة التقسيط', 'آخر جهة تقسيط', 'الجهة', 'finance', 'Finance', 'financeEntity', 'البنك', 'bank', 'Bank'] },
+        { key: 'total', label: 'الإجمالي', required: false, aliases: ['الإجمالي', 'الاجمالي', 'total', 'Total', 'سعر البيع', 'المبلغ'] },
+        { key: 'down', label: 'المقدم', required: false, aliases: ['المقدم', 'مقدم', 'down', 'Down', 'المقدم المدفوع', 'downPayment'] },
+        { key: 'monthly', label: 'القسط الشهري', required: false, aliases: ['القسط الشهري', 'القسط', 'monthly', 'Monthly', 'الشهري', 'installment'] },
+        { key: 'status', label: 'الحالة', required: false, aliases: ['حالة البيع', 'آخر حالة منتج', 'الحالة', 'status', 'Status', 'state'] },
+        { key: 'notes', label: 'ملاحظات', required: false, aliases: ['ملاحظات العميل', 'ملاحظات', 'ملاحظة', 'notes', 'Notes', 'comment', 'تعليق'] },
+        { key: 'altPhone', label: 'رقم بديل', required: false, aliases: ['بديل', 'رقم بديل', 'هاتف بديل', 'altPhone', 'alt_phone', 'phone2', 'هاتف 2'] },
+        { key: 'whatsapp', label: 'واتساب', required: false, aliases: ['واتساب', 'whatsapp', 'WhatsApp', 'whats', 'wa'] },
+        { key: 'chassis', label: 'رقم الشاسيه', required: false, aliases: ['الشاسيه', 'رقم الشاسيه', 'chassis', 'Chassis', 'VIN', 'vin'] },
+        { key: 'motor', label: 'رقم الموتور', required: false, aliases: ['الموتور', 'رقم الموتور', 'motor', 'Motor', 'engine'] },
+        { key: 'deliveryDate', label: 'تاريخ التسليم', required: false, aliases: ['تاريخ التسليم', 'آخر تاريخ تسليم', 'تاريخ البيع', 'delivery', 'Delivery', 'deliveryDate'] }
+    ];
+    
+    const findBestMatch = (aliases) => {
+        for (const alias of aliases) {
+            const exact = headers.find(h => h === alias);
+            if (exact) return exact;
+        }
+        for (const alias of aliases) {
+            const found = headers.find(h => h.toLowerCase() === alias.toLowerCase());
+            if (found) return found;
+        }
+        for (const alias of aliases) {
+            const found = headers.find(h => h.toLowerCase().includes(alias.toLowerCase()));
+            if (found) return found;
+        }
+        for (const alias of aliases) {
+            const found = headers.find(h => alias.toLowerCase().includes(h.toLowerCase()) && h.length > 2);
+            if (found) return found;
+        }
+        return '';
+    };
+    
+    const container = document.getElementById('mappingFieldsContainer');
+    container.innerHTML = fields.map(f => {
+        const detected = findBestMatch(f.aliases);
+        const firstValue = detected && rows.length ? String(rows[0][detected] || '').substring(0, 40) : '';
+        return `
+            <div class="bg-page p-3 rounded border border-gray-200">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
+                    <div>
+                        <span class="font-black text-sm text-navy-dark">${f.label}</span>
+                        ${f.required ? '<span class="text-red-600 font-black ml-1">*</span>' : ''}
+                    </div>
+                    <div class="md:col-span-2">
+                        <select data-field="${f.key}" onchange="updateMappingPreview()" class="mapping-select w-full px-3 py-2.5 border ${detected ? 'bg-green-50 border-green-300' : 'bg-white border-gray-300'} text-sm rounded font-bold">
+                            <option value="">— تجاهل —</option>
+                            ${headers.map(h => `<option value="${h}" ${h === detected ? 'selected' : ''}>${h}</option>`).join('')}
+                        </select>
+                    </div>
+                </div>
+                ${detected ? `<div class="mt-2 text-[10px] text-green-700 font-black"><i class="fa-solid fa-eye ml-1"></i>القيمة: <span class="bg-white px-2 py-0.5 rounded border border-green-200">${firstValue || '(فاضي)'}</span></div>` : ''}
+            </div>
+        `;
+    }).join('');
+    
+    const preview = document.getElementById('mappingPreview');
+    if (rows.length) {
+        const firstRow = rows[0];
+        preview.innerHTML = '<table class="w-full text-right"><thead><tr class="bg-white">' +
+            headers.slice(0, 8).map(h => `<th class="p-2 border border-gray-200 text-xs">${h}</th>`).join('') +
+            '</tr></thead><tbody><tr>' +
+            headers.slice(0, 8).map(h => `<td class="p-2 border border-gray-200 text-xs">${String(firstRow[h] || '').substring(0, 30) || '-'}</td>`).join('') +
+            '</tr></tbody></table>' + (headers.length > 8 ? '<p class="text-[10px] text-gray-400 mt-2">* يظهر أول 8 أعمدة فقط</p>' : '');
+    }
+}
+
+function updateMappingPreview() {
+    document.querySelectorAll('.mapping-select').forEach(sel => {
+        if (sel.value) {
+            sel.classList.add('bg-green-50', 'border-green-300');
+            sel.classList.remove('bg-white', 'border-gray-300');
+        } else {
+            sel.classList.remove('bg-green-50', 'border-green-300');
+            sel.classList.add('bg-white', 'border-gray-300');
+        }
+    });
+}
+
+function closeColumnMappingModal() {
+    const modal = document.getElementById('columnMappingModal');
+    modal.classList.add('hidden'); modal.classList.remove('flex');
+    pendingImportRows = []; pendingImportHeaders = [];
+    pendingWorkbook = null; currentSheetName = '';
+}
+
+// ✅ الدالة المصححة - بتاخد نسخة من البيانات قبل الإغلاق
+async function confirmImportFromMapping() {
+    const selects = document.querySelectorAll('.mapping-select');
+    const mapping = {};
+    let hasName = false, hasPhone = false;
+    
+    selects.forEach(sel => {
+        const field = sel.dataset.field;
+        const val = sel.value;
+        if (val) {
+            mapping[field] = val;
+            if (field === 'name') hasName = true;
+            if (field === 'phone') hasPhone = true;
+        }
+    });
+    
+    if (!hasName || !hasPhone) {
+        return showToast('لازم تربط "الاسم" و "الهاتف" على الأقل', 'error');
+    }
+    
+    // ✅ التعديل الأساسي: خد نسخة من البيانات قبل الإغلاق
+    const rows = [...pendingImportRows];
+    const sheetName = currentSheetName;
+    
+    console.log(`🚀 بدء استيراد ${rows.length} صف من ورقة "${sheetName}"`);
+    console.log('📋 الربط:', mapping);
+    
+    // ✅ دلوقتي اقفل النافذة
+    closeColumnMappingModal();
+    showLoading();
+    
     try {
-        const response = await fetch(APPS_SCRIPT_URL + '?action=template');
-        const result = await response.json();
-        if (result.success) {
-            showToast('✅ تم إنشاء القالب');
-            window.open(result.url, '_blank');
-        } else showToast('خطأ: ' + result.error, 'error');
-    } catch(e) { showToast('خطأ: ' + e.message, 'error'); }
+        const getVal = (row, field) => {
+            const colName = mapping[field];
+            if (!colName) return '';
+            const v = row[colName];
+            return v !== undefined && v !== null ? String(v).trim() : '';
+        };
+        
+        let imported = 0, skipped = 0, failed = 0;
+        const importedCustomers = [];
+        const skippedReasons = [];
+        
+        for (let idx = 0; idx < rows.length; idx++) {
+            const row = rows[idx];
+            try {
+                const name = getVal(row, 'name');
+                const phone = getVal(row, 'phone');
+                
+                if (!name || !phone) {
+                    skipped++;
+                    skippedReasons.push(`صف ${idx + 1}: ${!name ? 'اسم مفقود' : 'هاتف مفقود'}`);
+                    console.warn(`⏭️ صف ${idx+1} متجاهل`);
+                    continue;
+                }
+                
+                const code = generateCustomerCode();
+                const custId = 'c' + Date.now() + Math.random().toString(36).slice(2,5);
+                const prodId = 'p' + Date.now() + Math.random().toString(36).slice(2,5);
+                
+                const total = Number(getVal(row, 'total')) || 0;
+                const down = Number(getVal(row, 'down')) || 0;
+                const vehicle = getVal(row, 'vehicle') || 'غير محدد';
+                const financeEntity = getVal(row, 'financeEntity');
+                const status = getVal(row, 'status') || 'مفتوحة';
+                
+                console.log(`👤 [${idx+1}] ${name} | مركبة: ${vehicle} | جهة: ${financeEntity} | حالة: ${status}`);
+                
+                const firstProduct = {
+                    id: prodId,
+                    vehicle: vehicle,
+                    payMethod: financeEntity ? 'تقسيط' : 'كاش',
+                    financeEntity: financeEntity,
+                    stage: '',
+                    status: status,
+                    total: total, down: down,
+                    monthly: Number(getVal(row, 'monthly')) || 0,
+                    deliveryDate: getVal(row, 'deliveryDate'),
+                    chassis: getVal(row, 'chassis'),
+                    motor: getVal(row, 'motor'),
+                    model: '',
+                    debt: Math.max(0, total - down),
+                    notes: '', createdAt: Date.now(),
+                    createdBy: currentUser.id, createdByName: currentUser.name
+                };
+                
+                const customer = {
+                    id: custId, name: name,
+                    natId: getVal(row, 'natId'),
+                    job: getVal(row, 'job'),
+                    phone: phone,
+                    altPhone: getVal(row, 'altPhone'),
+                    whatsapp: getVal(row, 'whatsapp'),
+                    gov: getVal(row, 'gov'),
+                    district: getVal(row, 'district'),
+                    address: getVal(row, 'address'),
+                    password: code,
+                    channel: getVal(row, 'channel'),
+                    interest: vehicle,
+                    status: status,
+                    notes: getVal(row, 'notes'),
+                    products: [firstProduct], followups: [],
+                    createdAt: Date.now() + imported,
+                    createdBy: currentUser.id, createdByName: currentUser.name
+                };
+                
+                try { await saveCustomerToCollection(customer); } 
+                catch(fbErr) { console.warn('⚠️ فشل حفظ Firebase:', name, fbErr.message); }
+                
+                appData.customers.push(customer);
+                importedCustomers.push(customer);
+                imported++;
+            } catch(rowErr) {
+                console.error('❌ خطأ في صف:', idx, rowErr);
+                failed++;
+            }
+        }
+        
+        loadedCustomers = [...importedCustomers, ...loadedCustomers];
+        updateDashboard();
+        switchTab('search');
+        
+        const area = document.getElementById('searchResultsArea');
+        if (area) {
+            area.innerHTML = `
+                <div class="text-xs font-black text-green-700 mb-3 bg-green-50 p-3 rounded border border-green-200">
+                    <i class="fa-solid fa-circle-check ml-1"></i>
+                    ✅ تم استيراد ${imported} عميل من ورقة "${sheetName}"
+                    ${skipped ? ` • تم تجاهل ${skipped}` : ''}
+                    ${failed ? ` • فشل ${failed}` : ''}
+                </div>
+            ` + importedCustomers.map(c => renderCustomerCard(c)).join('');
+        }
+        
+        logActivity('import_customers', `استيراد من ملف: ${imported} عميل`);
+        
+        let msg = `✅ تم استيراد ${imported} عميل`;
+        if (skipped) msg += ` • تجاهل ${skipped}`;
+        if (failed) msg += ` • فشل ${failed}`;
+        showToast(msg);
+        
+        if (skippedReasons.length) {
+            console.warn('⚠️ الصفوف المتجاهلة:');
+            skippedReasons.forEach(r => console.warn('  -', r));
+        }
+        
+        triggerImmediateSync();
+        
+    } catch(err) {
+        console.error('❌ خطأ في الاستيراد:', err);
+        showToast('خطأ: ' + err.message, 'error');
+    }
+    
+    hideLoading();
 }
 
 // ==================== COLLECTIONS API ====================
@@ -725,13 +1142,10 @@ async function logActivityToCollection(type, details, customerCode = '', custome
     } catch(e) {}
 }
 
-// ⚡ تحميل أسرع مع Promise.all (Parallel)
 async function loadCustomersPage(lastCursorDoc = null, pageSize = 20) {
     let q = db.collection('customers').orderBy('createdAt', 'desc').limit(pageSize);
     if (lastCursorDoc) q = q.startAfter(lastCursorDoc);
     const snap = await q.get();
-
-    // Parallel loading لكل عميل
     const customers = await Promise.all(snap.docs.map(async (doc) => {
         const c = { id: doc.id, ...doc.data() };
         try {
@@ -744,7 +1158,6 @@ async function loadCustomersPage(lastCursorDoc = null, pageSize = 20) {
         } catch(e) { c.products = []; c.followups = []; }
         return c;
     }));
-
     return { customers, lastDoc: snap.docs[snap.docs.length - 1] || null, hasMore: snap.size === pageSize };
 }
 
@@ -768,7 +1181,6 @@ async function searchCustomersInCollection(q) {
     try { const s = await db.collection('customers').where('phone', '==', q).get(); s.docs.forEach(add); } catch(e) {}
     try { const s = await db.collection('customers').where('name', '>=', q).where('name', '<=', q + '\uf8ff').limit(20).get(); s.docs.forEach(add); } catch(e) {}
     try { const s = await db.collection('customers').where('natId', '==', q).limit(5).get(); s.docs.forEach(add); } catch(e) {}
-
     await Promise.all(results.map(async (c) => {
         try {
             const docRef = db.collection('customers').doc(c.id);
@@ -832,14 +1244,14 @@ async function saveToCloud() {
 
 function saveToLocal() {
     try {
-        localStorage.setItem('autoCrmDataV11', JSON.stringify(appData));
-        localStorage.setItem('autoCrmUsersV11', JSON.stringify(usersDb));
+        localStorage.setItem('autoCrmDataV19', JSON.stringify(appData));
+        localStorage.setItem('autoCrmUsersV19', JSON.stringify(usersDb));
     } catch(e) {}
 }
 function loadFromLocal() {
     try {
-        const d = localStorage.getItem('autoCrmDataV11');
-        const u = localStorage.getItem('autoCrmUsersV11');
+        const d = localStorage.getItem('autoCrmDataV19');
+        const u = localStorage.getItem('autoCrmUsersV19');
         if (d) { const p = JSON.parse(d); if (p.tasks) appData.tasks = p.tasks; if (p.config) appData.config = { ...appData.config, ...p.config }; }
         if (u) { const p = JSON.parse(u); if (Array.isArray(p) && p.length) usersDb = p; }
     } catch(e) {}
@@ -924,22 +1336,16 @@ async function applyFilters() {
     const f = getActiveFilters();
     if (!hasActiveFilters(f)) return showToast('اختار فلتر واحد على الأقل', 'error');
     const area = document.getElementById('searchResultsArea');
-    area.innerHTML = '<div class="text-center py-12"><i class="fa-solid fa-spinner fa-spin text-3xl text-sky"></i><div class="mt-3 text-gray-500 font-bold">جاري التحميل...</div></div>';
+    area.innerHTML = '<div class="text-center py-12"><i class="fa-solid fa-spinner fa-spin text-3xl text-sky"></i></div>';
     document.getElementById('loadMoreWrap').classList.add('hidden');
     try {
         let baseCustomers = allCustomersCache;
-        if (!baseCustomers.length) {
-            baseCustomers = await loadAllCustomersForFilter();
-            allCustomersCache = baseCustomers;
-        }
+        if (!baseCustomers.length) { baseCustomers = await loadAllCustomersForFilter(); allCustomersCache = baseCustomers; }
         const results = filterCustomers(baseCustomers, f);
         const info = document.getElementById('filterResultsInfo');
         info.classList.remove('hidden');
         info.innerHTML = `<i class="fa-solid fa-circle-info ml-1"></i> فلترة ${baseCustomers.length} → <span class="text-green-700">${results.length} نتيجة</span>`;
-        if (results.length === 0) {
-            area.innerHTML = '<div class="panel p-8 text-center"><i class="fa-solid fa-filter-circle-xmark text-gray-300 text-5xl mb-3"></i><div class="text-gray-400 font-bold">مفيش نتائج</div></div>';
-            return;
-        }
+        if (results.length === 0) { area.innerHTML = '<div class="panel p-8 text-center"><i class="fa-solid fa-filter-circle-xmark text-gray-300 text-5xl mb-3"></i><div class="text-gray-400 font-bold">مفيش نتائج</div></div>'; return; }
         area.innerHTML = `<div class="text-xs font-black text-ink-muted mb-3">نتائج الفلترة (${results.length} عميل)</div>` + results.map(c => renderCustomerCard(c)).join('');
     } catch(e) { area.innerHTML = `<div class="panel p-8 text-center text-red-500 font-bold">خطأ: ${e.message}</div>`; }
 }
@@ -974,7 +1380,7 @@ function setLoginType(type) {
 }
 
 function checkLoginState() {
-    const s = sessionStorage.getItem('autoCrmUserV11');
+    const s = sessionStorage.getItem('autoCrmUserV19');
     if (s) {
         const u = JSON.parse(s);
         if (u.roleType === 'customer') { currentUser = u; showCustomerPortal(); }
@@ -994,18 +1400,17 @@ async function handleLogin(e) {
         const user = usersDb.find(x => x.username === u && x.password === p);
         if (user) {
             currentUser = { ...user, roleType: 'admin' };
-            sessionStorage.setItem('autoCrmUserV11', JSON.stringify(currentUser));
+            sessionStorage.setItem('autoCrmUserV19', JSON.stringify(currentUser));
             logActivity('login', `دخول ${user.role === 'manager' ? 'المدير' : 'الموظف'} ${user.name}`);
             showLoading();
-            await showApp();
-            hideLoading();
+            try { await showApp(); } catch(err) { console.error('showApp error:', err); } finally { hideLoading(); }
             showToast(`مرحباً، ${user.name}`);
         } else showToast('بيانات غير صحيحة!', 'error');
     } else {
         const cust = appData.customers.find(c => (c.phone === u || c.altPhone === u || c.password === u) && (c.password === p));
         if (cust) {
             currentUser = { ...cust, roleType: 'customer' };
-            sessionStorage.setItem('autoCrmUserV11', JSON.stringify(currentUser));
+            sessionStorage.setItem('autoCrmUserV19', JSON.stringify(currentUser));
             showCustomerPortal(); showToast(`مرحباً، ${cust.name}`);
         } else showToast('خطأ في البيانات!', 'error');
     }
@@ -1013,9 +1418,8 @@ async function handleLogin(e) {
 
 function handleLogout() {
     if (currentUser && currentUser.roleType === 'admin') logActivity('logout', `خروج ${currentUser.name}`);
-    sessionStorage.removeItem('autoCrmUserV11');
+    sessionStorage.removeItem('autoCrmUserV19');
     currentUser = null;
-    dashboardLoaded = false;
     document.getElementById('loginForm').reset();
     switchTab('dashboard');
     ['mainHeader','mainLayout','customerPortalScreen'].forEach(id => {
@@ -1040,26 +1444,23 @@ async function showApp() {
     const a = document.getElementById('adminSection'), e = document.getElementById('employeeSection');
     if (isManager()) { a.classList.remove('hidden'); e.classList.add('hidden'); }
     else { a.classList.add('hidden'); e.classList.remove('hidden'); }
-
-    // 🆕 تحميل العملاء تلقائي عند الدخول
-    await loadCustomersInitial();
-
-    updateDashboard();
-    renderDashboardTasks();
-    renderFullTasks();
+    try { await loadCustomersInitial(); } catch(err) { console.warn('Initial load failed:', err); }
+    updateDashboard(); renderDashboardTasks(); renderFullTasks();
 }
 
-// 🆕 تحميل العملاء في الخلفية عند فتح التطبيق
 async function loadCustomersInitial() {
     try {
-        const page = await loadCustomersPage(null, 30);
+        const page = await Promise.race([
+            loadCustomersPage(null, 10),
+            new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 5000))
+        ]);
         loadedCustomers = page.customers;
         lastVisibleDoc = page.lastDoc;
         hasMoreCustomers = page.hasMore;
-        appData.customers = page.customers; // للاستخدام في البحث السريع
-        dashboardLoaded = true;
-    } catch(e) {
-        console.error('Load error:', e);
+        appData.customers = page.customers;
+    } catch(e) { 
+        console.error('Load error/timeout:', e);
+        if (!loadedCustomers) loadedCustomers = [];
     }
 }
 
@@ -1105,7 +1506,6 @@ function switchTab(tabId) {
 function toggleSidebar() { const s = document.getElementById('sidebar'); s.classList.toggle('-right-64'); s.classList.toggle('right-0'); }
 function closeSidebarOnMobile() { if (window.innerWidth < 1024) { const s = document.getElementById('sidebar'); s.classList.add('-right-64'); s.classList.remove('right-0'); } }
 
-// ==================== EMPLOYEES ====================
 function openEmployeeModal(id) {
     const m = document.getElementById('employeeModal');
     m.classList.remove('hidden'); m.classList.add('flex');
@@ -1199,7 +1599,6 @@ function updateEmployeesKpi() {
 }
 function viewEmployeeActivity(id) { switchTab('activity'); setTimeout(() => { document.getElementById('activityFilterUser').value = id; renderActivityLog(); }, 100); }
 
-// ==================== ACTIVITY ====================
 function populateActivityFilters() {
     const sel = document.getElementById('activityFilterUser');
     if (!sel) return;
@@ -1266,7 +1665,6 @@ function activityItem(a, hideName = false) {
     </div>`;
 }
 
-// ==================== DROPDOWNS ====================
 function populateDropdowns() {
     const fill = (id, arr, ph) => {
         const el = document.getElementById(id);
@@ -1283,7 +1681,6 @@ function populateDropdowns() {
     fill('prodStage', appData.config.installmentStages, 'اختر المرحلة');
 }
 
-// ==================== CUSTOMER ====================
 async function openCustomerModal(id) {
     const m = document.getElementById('customerModal');
     m.classList.remove('hidden'); m.classList.add('flex');
@@ -1375,13 +1772,12 @@ async function saveCustomerData(e) {
     }
     allCustomersCache = [];
     saveData(); closeCustomerModal();
-    // 🆕 إعادة تحميل بعد الحفظ
     await loadCustomersInitial();
     updateDashboard();
     if (document.getElementById('tab-search').classList.contains('block')) executeCustomerSearch();
+    triggerImmediateSync();
 }
 
-// 🆕 حذف كل العملاء
 function deleteAllCustomers() {
     if (!isManager()) return showToast('للمدير فقط', 'error');
     const m = document.getElementById('deleteAllModal');
@@ -1395,7 +1791,6 @@ async function confirmDeleteAll() {
     closeDeleteAllModal();
     showLoading();
     try {
-        // احذف كل العملاء + subcollections
         let total = 0;
         let hasMore = true;
         while (hasMore) {
@@ -1414,20 +1809,15 @@ async function confirmDeleteAll() {
             hasMore = snap.size === 50;
         }
         logActivity('delete_all_customers', `حذف كل العملاء (${total} عميل)`);
-        appData.customers = [];
-        loadedCustomers = [];
-        allCustomersCache = [];
+        appData.customers = []; loadedCustomers = []; allCustomersCache = [];
         await loadCustomersInitial();
-        updateDashboard();
-        executeCustomerSearch();
+        updateDashboard(); executeCustomerSearch();
         showToast(`✅ تم حذف ${total} عميل`);
-    } catch(e) {
-        showToast('خطأ: ' + e.message, 'error');
-    }
+        triggerImmediateSync();
+    } catch(e) { showToast('خطأ: ' + e.message, 'error'); }
     hideLoading();
 }
 
-// ==================== PRODUCTS ====================
 async function openProductModal(custId, prodId) {
     const m = document.getElementById('productModal');
     m.classList.remove('hidden'); m.classList.add('flex');
@@ -1505,6 +1895,7 @@ async function saveProductData(e) {
     updateDashboard();
     if (currentDetailCustomerId === custId) openCustomerDetail(custId);
     showToast('تم الحفظ');
+    triggerImmediateSync();
 }
 async function deleteProduct(custId, prodId) {
     if (!isManager()) return showToast('للمدير فقط', 'error');
@@ -1518,9 +1909,9 @@ async function deleteProduct(custId, prodId) {
     updateDashboard();
     if (currentDetailCustomerId === custId) openCustomerDetail(custId);
     showToast('تم الحذف');
+    triggerImmediateSync();
 }
 
-// ==================== FOLLOWUPS ====================
 function openFollowupModal(custId) {
     const c = appData.customers.find(x => x.id === custId);
     const name = c ? c.name : '';
@@ -1557,9 +1948,9 @@ async function saveFollowupData(e) {
     updateDashboard(); renderFullTasks(); renderDashboardTasks();
     if (currentDetailCustomerId === custId) openCustomerDetail(custId);
     showToast('تم الحفظ');
+    triggerImmediateSync();
 }
 
-// ==================== CUSTOMER DETAIL ====================
 async function openCustomerDetail(custId) {
     const c = await getCustomerFromCollection(custId);
     if (!c) return showToast('العميل غير موجود', 'error');
@@ -1666,9 +2057,9 @@ async function deleteCustomer(id) {
     closeCustomerDetail();
     if (document.getElementById('tab-search').classList.contains('block')) executeCustomerSearch();
     showToast('تم الحذف');
+    triggerImmediateSync();
 }
 
-// ==================== SEARCH ====================
 function handleGlobalSearch() {
     const q = document.getElementById('globalPhoneSearchInput').value.trim();
     if (!q) return showToast('أدخل كلمة بحث', 'error');
@@ -1678,228 +2069,400 @@ function handleGlobalSearch() {
 }
 function searchCustomerFromDash() {
     const q = document.getElementById('dashPhoneInput').value.trim();
-    if (!q) return showToast('أدخل كلمة بحث', 'error');
+    if (!q) return showToast('أدخل رقم أو اسم أو كود', 'error');
     switchTab('search');
     document.getElementById('mainSearchPhone').value = q;
     executeCustomerSearch();
 }
+
 async function executeCustomerSearch() {
     const q = document.getElementById('mainSearchPhone').value.trim();
     const area = document.getElementById('searchResultsArea');
-    area.innerHTML = '<div class="text-center py-12"><i class="fa-solid fa-spinner fa-spin text-3xl text-sky"></i></div>';
-    document.getElementById('loadMoreWrap').classList.add('hidden');
-    try {
-        if (!q) {
-            document.getElementById('filterResultsInfo').classList.add('hidden');
-            // لو محملين من قبل، استخدمهم
-            if (loadedCustomers.length > 0) {
-                area.innerHTML = `<div class="text-xs font-black text-ink-muted mb-3">آخر ${loadedCustomers.length} عميل</div>` + loadedCustomers.map(c => renderCustomerCard(c)).join('');
-                if (hasMoreCustomers) document.getElementById('loadMoreWrap').classList.remove('hidden');
-                return;
-            }
-            const page = await loadCustomersPage(null, 20);
-            loadedCustomers = page.customers;
-            lastVisibleDoc = page.lastDoc;
-            hasMoreCustomers = page.hasMore;
-            if (page.customers.length === 0) {
-                area.innerHTML = `<div class="panel p-8 text-center"><i class="fa-solid fa-user-slash text-gray-300 text-5xl mb-3"></i><div class="text-gray-400 font-bold mb-4">لا يوجد عملاء بعد</div><button onclick="openCustomerModal()" class="btn-primary px-6 py-3 text-sm rounded inline-flex items-center gap-2"><i class="fa-solid fa-user-plus"></i> إضافة عميل جديد</button></div>`;
-                return;
-            }
-            area.innerHTML = `<div class="text-xs font-black text-ink-muted mb-3">آخر ${page.customers.length} عميل</div>` + page.customers.map(c => renderCustomerCard(c)).join('');
-            if (hasMoreCustomers) document.getElementById('loadMoreWrap').classList.remove('hidden');
-        } else {
-            const results = await searchCustomersInCollection(q);
-            if (results.length === 0) {
-                area.innerHTML = `<div class="panel p-8 text-center"><i class="fa-solid fa-user-slash text-gray-300 text-5xl mb-3"></i><div class="text-gray-400 font-bold mb-4">لا يوجد نتائج لـ "${q}"</div></div>`;
-                return;
-            }
-            area.innerHTML = `<div class="text-xs font-black text-ink-muted mb-3">نتائج: ${results.length}</div>` + results.map(c => renderCustomerCard(c)).join('');
+    const loadMoreWrap = document.getElementById('loadMoreWrap');
+
+    if (!q) {
+        if (loadedCustomers.length === 0) {
+            area.innerHTML = `<div class="panel p-8 text-center">
+                <i class="fa-solid fa-users text-gray-300 text-5xl mb-3"></i>
+                <div class="text-gray-400 font-bold">لا يوجد عملاء حالياً. اضغط "إضافة عميل جديد" للبدء.</div>
+            </div>`;
+            loadMoreWrap.classList.add('hidden');
+            return;
         }
-    } catch(e) { area.innerHTML = `<div class="panel p-8 text-center text-red-500 font-bold">خطأ: ${e.message}</div>`; }
-}
-async function loadMoreCustomers() {
-    const btn = document.getElementById('loadMoreBtn');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-1"></i> جاري التحميل...';
+        area.innerHTML = `<div class="text-xs font-black text-ink-muted mb-3"><i class="fa-solid fa-clock ml-1"></i> أحدث ${loadedCustomers.length} عميل</div>`
+            + loadedCustomers.map(c => renderCustomerCard(c)).join('');
+        loadMoreWrap.classList.toggle('hidden', !hasMoreCustomers);
+        return;
+    }
+
+    area.innerHTML = '<div class="text-center py-12"><i class="fa-solid fa-spinner fa-spin text-3xl text-sky"></i><div class="text-gray-500 font-bold mt-3 text-sm">جاري البحث...</div></div>';
+    loadMoreWrap.classList.add('hidden');
+
     try {
-        const page = await loadCustomersPage(lastVisibleDoc, 20);
-        loadedCustomers = loadedCustomers.concat(page.customers);
-        lastVisibleDoc = page.lastDoc;
-        hasMoreCustomers = page.hasMore;
-        const area = document.getElementById('searchResultsArea');
-        area.innerHTML += page.customers.map(c => renderCustomerCard(c)).join('');
-        if (hasMoreCustomers) {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fa-solid fa-chevron-down ml-1"></i> تحميل المزيد';
-        } else document.getElementById('loadMoreWrap').classList.add('hidden');
-    } catch(e) {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fa-solid fa-chevron-down ml-1"></i> تحميل المزيد';
+        const qLower = q.toLowerCase();
+        const localResults = loadedCustomers.filter(c =>
+            (c.name || '').toLowerCase().includes(qLower) ||
+            (c.phone || '').includes(q) ||
+            (c.altPhone || '').includes(q) ||
+            (c.whatsapp || '').includes(q) ||
+            (c.customerCode || '').toUpperCase().includes(q.toUpperCase()) ||
+            (c.natId || '').includes(q)
+        );
+
+        const remoteResults = await searchCustomersInCollection(q);
+
+        const seen = new Set();
+        const results = [];
+        [...localResults, ...remoteResults].forEach(c => {
+            if (!seen.has(c.id)) { seen.add(c.id); results.push(c); }
+        });
+
+        if (results.length === 0) {
+            area.innerHTML = `<div class="panel p-8 text-center">
+                <i class="fa-solid fa-magnifying-glass text-gray-300 text-5xl mb-3"></i>
+                <div class="text-gray-500 font-black mb-1">لا توجد نتائج</div>
+                <div class="text-xs text-gray-400 font-bold">جرّب البحث بالاسم أو رقم الهاتف أو كود العميل</div>
+            </div>`;
+            return;
+        }
+
+        area.innerHTML = `<div class="text-xs font-black text-ink-muted mb-3">
+            <i class="fa-solid fa-circle-check text-green-600 ml-1"></i> نتائج البحث (${results.length} عميل)
+        </div>` + results.map(c => renderCustomerCard(c)).join('');
+    } catch (e) {
+        area.innerHTML = `<div class="panel p-8 text-center text-red-500 font-bold">خطأ في البحث: ${e.message}</div>`;
     }
 }
+
 function renderCustomerCard(c) {
-    const map = { 'منفذة': 'badge-green', 'منفذة / تم البيع': 'badge-green', 'جاري التقسيط': 'badge-yellow', 'جاري التقسيط والدراسة': 'badge-yellow', 'مفتوحة': 'badge-blue', 'مفتوحة / تحت التواصل': 'badge-blue', 'مفقودة': 'badge-red', 'مفقودة / ملغاة': 'badge-red' };
-    const lp = (c.products && c.products.length) ? c.products[c.products.length - 1] : null;
-    const lf = (c.followups && c.followups.length) ? c.followups[0] : null;
-    const td = (c.products || []).reduce((s, p) => s + Number(p.debt || 0), 0);
-    return `<div class="panel panel-hover p-5 mb-4 border-r-4 border-r-navy-dark">
-        <div class="flex flex-col md:flex-row justify-between gap-4 mb-4 pb-4 border-b border-gray-200">
-            <div>
-                <h3 class="text-lg font-black text-navy-dark mb-2 cursor-pointer hover:text-sky" onclick="openCustomerDetail('${c.id}')">${c.name}</h3>
-                <div class="flex flex-wrap gap-4 text-xs text-gray-600 font-bold">
-                    <span><i class="fa-solid fa-key text-navy ml-1"></i>${c.customerCode || '-'}</span>
-                    <span><i class="fa-solid fa-phone text-sky ml-1"></i>${c.phone}</span>
-                    ${c.gov ? `<span><i class="fa-solid fa-location-dot text-sky ml-1"></i>${c.gov}</span>` : ''}
+    const products = c.products || [];
+    const lastProduct = products.length ? products[products.length - 1] : {};
+    const status = lastProduct.status || c.status || 'مفتوحة';
+    const map = {
+        'منفذة': 'badge-green', 'منفذة / تم البيع': 'badge-green',
+        'جاري التقسيط': 'badge-yellow', 'جاري التقسيط والدراسة': 'badge-yellow',
+        'مفتوحة': 'badge-blue', 'مفتوحة / تحت التواصل': 'badge-blue',
+        'مفقودة': 'badge-red', 'مفقودة / ملغاة': 'badge-red'
+    };
+    const statusCls = map[status] || 'badge-gray';
+    const totalDebt = products.reduce((sum, p) => sum + (Number(p.debt) || 0), 0);
+    const firstLetter = (c.name || '?').charAt(0).toUpperCase();
+    const followupsCount = (c.followups || []).length;
+
+    return `<div class="panel panel-hover p-4 mb-3 task-clickable" onclick="openCustomerDetail('${c.id}')">
+        <div class="flex flex-col md:flex-row justify-between gap-4">
+            <div class="flex items-start gap-4 flex-1">
+                <div class="w-12 h-12 rounded-lg bg-gradient-to-br from-navy-dark to-sky flex items-center justify-center text-white font-black text-lg shrink-0">${firstLetter}</div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap items-center gap-2 mb-1.5">
+                        <b class="text-navy-dark text-base">${c.name || '-'}</b>
+                        <span class="badge ${statusCls}">${status}</span>
+                        ${c.customerCode ? `<span class="badge badge-blue tracking-widest">${c.customerCode}</span>` : ''}
+                    </div>
+                    <div class="text-xs text-gray-500 font-bold flex flex-wrap gap-x-4 gap-y-1.5">
+                        ${c.phone ? `<span><i class="fa-solid fa-phone text-sky ml-1"></i>${c.phone}</span>` : ''}
+                        ${c.gov ? `<span><i class="fa-solid fa-location-dot text-sky ml-1"></i>${c.gov}${c.district ? ' - ' + c.district : ''}</span>` : ''}
+                        ${lastProduct.vehicle ? `<span><i class="fa-solid fa-car text-sky ml-1"></i>${lastProduct.vehicle}</span>` : ''}
+                        ${c.channel ? `<span><i class="fa-solid fa-bullhorn text-sky ml-1"></i>${c.channel}</span>` : ''}
+                        ${followupsCount ? `<span><i class="fa-solid fa-comment-dots text-sky ml-1"></i>${followupsCount} متابعة</span>` : ''}
+                    </div>
                 </div>
             </div>
-            <div class="flex flex-wrap items-center gap-2">
-                ${lp ? `<span class="badge ${map[lp.status] || 'badge-gray'}">${lp.status}</span>` : ''}
-                <span class="badge badge-blue">${(c.products || []).length} منتج</span>
-                ${td > 0 ? `<span class="badge badge-yellow">مديونية: ${td.toLocaleString()}</span>` : ''}
+            <div class="flex flex-row md:flex-col items-center md:items-end justify-between md:justify-center gap-2 shrink-0">
+                ${totalDebt > 0 ? `<div class="text-right md:text-left bg-amber-50 border border-amber-200 px-3 py-1.5 rounded">
+                    <div class="text-[9px] text-amber-700 font-black uppercase">المديونية</div>
+                    <div class="font-black text-amber-700 text-sm">${totalDebt.toLocaleString()} ج.م</div>
+                </div>` : ''}
+                <div class="flex gap-1.5">
+                    <button onclick="event.stopPropagation();openFollowupModal('${c.id}')" title="إضافة متابعة" class="btn-secondary text-xs px-3 py-2 rounded"><i class="fa-solid fa-comment-dots"></i></button>
+                    <button onclick="event.stopPropagation();openCustomerModal('${c.id}')" title="تعديل" class="btn-secondary text-xs px-3 py-2 rounded"><i class="fa-solid fa-pen"></i></button>
+                    <button onclick="event.stopPropagation();openCustomerDetail('${c.id}')" title="عرض" class="btn-primary text-xs px-3 py-2 rounded"><i class="fa-solid fa-eye"></i></button>
+                </div>
             </div>
-        </div>
-        <div class="flex flex-wrap gap-2 pt-3 border-t border-gray-200">
-            <button onclick="openCustomerDetail('${c.id}')" class="btn-secondary text-xs px-4 py-2 rounded"><i class="fa-solid fa-eye ml-1"></i> عرض</button>
-            <button onclick="openProductModal('${c.id}')" class="btn-primary text-xs px-4 py-2 rounded"><i class="fa-solid fa-plus ml-1"></i> منتج</button>
-            <button onclick="openFollowupModal('${c.id}')" class="btn-primary text-xs px-4 py-2 rounded"><i class="fa-solid fa-comment ml-1"></i> متابعة</button>
-            <button onclick="openCustomerModal('${c.id}')" class="btn-secondary text-xs px-4 py-2 rounded"><i class="fa-solid fa-pen ml-1"></i> تعديل</button>
-            ${isManager() ? `<button onclick="deleteCustomer('${c.id}')" class="btn-danger text-xs px-4 py-2 rounded mr-auto"><i class="fa-solid fa-trash ml-1"></i> حذف</button>` : ''}
         </div>
     </div>`;
 }
 
+async function loadMoreCustomers() {
+    if (!hasMoreCustomers) return;
+    const btn = document.getElementById('loadMoreBtn');
+    const original = btn.innerHTML;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-1"></i> جاري التحميل...';
+    btn.disabled = true;
+    try {
+        const page = await loadCustomersPage(lastVisibleDoc, 30);
+        loadedCustomers = loadedCustomers.concat(page.customers);
+        lastVisibleDoc = page.lastDoc;
+        hasMoreCustomers = page.hasMore;
+        const area = document.getElementById('searchResultsArea');
+        area.insertAdjacentHTML('beforeend', page.customers.map(c => renderCustomerCard(c)).join(''));
+        document.getElementById('loadMoreWrap').classList.toggle('hidden', !hasMoreCustomers);
+    } catch (e) { showToast('خطأ: ' + e.message, 'error'); }
+    btn.innerHTML = original;
+    btn.disabled = false;
+}
+
 // ==================== DASHBOARD ====================
 function updateDashboard() {
-    const cs = loadedCustomers.length ? loadedCustomers : appData.customers;
-    const totalDebt = cs.reduce((s, c) => s + (c.products || []).reduce((ss, p) => ss + Number(p.debt || 0), 0), 0);
-    const salesDone = cs.filter(c => (c.products || []).some(p => p.status === 'منفذة' || p.status === 'منفذة / تم البيع')).length;
-    document.getElementById('kpiTotalCustomers').innerText = cs.length;
+    const customers = appData.customers || [];
+    document.getElementById('kpiTotalCustomers').innerText = customers.length;
+    let salesDone = 0, totalDebt = 0;
+    customers.forEach(c => {
+        (c.products || []).forEach(p => {
+            if ((p.status || '').includes('منفذة')) salesDone++;
+            totalDebt += Number(p.debt) || 0;
+        });
+    });
     document.getElementById('kpiSalesDone').innerText = salesDone;
     document.getElementById('kpiTotalDebt').innerText = totalDebt.toLocaleString();
     const today = new Date().toISOString().split('T')[0];
-    const todayTasks = appData.tasks.filter(t => !t.completed && t.date <= today).length;
-    document.getElementById('kpiTodayTasks').innerText = todayTasks;
-    document.getElementById('pendingTasksBadge').innerText = todayTasks;
-    const nc = document.getElementById('navTasksCount');
-    if (todayTasks > 0) { nc.classList.remove('hidden'); nc.innerText = todayTasks; } else nc.classList.add('hidden');
+    const allPending = (appData.tasks || []).filter(t => !t.completed);
+    const todayTasks = allPending.filter(t => t.date === today);
+    document.getElementById('kpiTodayTasks').innerText = todayTasks.length;
+    document.getElementById('pendingTasksBadge').innerText = allPending.length;
+    const navCount = document.getElementById('navTasksCount');
+    if (allPending.length > 0) { navCount.innerText = allPending.length; navCount.classList.remove('hidden'); }
+    else { navCount.classList.add('hidden'); }
 }
+
 function renderDashboardTasks() {
     const container = document.getElementById('dashboardTasksList');
+    if (!container) return;
     const today = new Date().toISOString().split('T')[0];
-    const tasks = appData.tasks.filter(t => !t.completed && t.date <= today).slice(0, 5);
-    if (tasks.length === 0) { container.innerHTML = `<div class="text-center text-gray-400 text-sm py-8 font-bold border border-dashed border-gray-300 rounded">لا توجد مهام معلقة.</div>`; return; }
+    const tasks = (appData.tasks || []).filter(t => !t.completed).sort((a, b) => (a.date || '').localeCompare(b.date || '')).slice(0, 8);
+    if (tasks.length === 0) {
+        container.innerHTML = `<div class="text-center text-gray-400 py-10 font-bold"><i class="fa-solid fa-clipboard-check text-4xl mb-3 text-gray-300"></i><div>لا توجد مهام حالياً</div></div>`;
+        return;
+    }
     container.innerHTML = tasks.map(t => {
-        const c = appData.customers.find(x => x.id === t.customerId);
-        return `<div class="flex items-start gap-3 p-3 bg-page border border-gray-200 rounded task-clickable" onclick="openCustomerDetail('${t.customerId}')">
-            <button onclick="event.stopPropagation();toggleTaskDone('${t.id}')" class="w-6 h-6 border-2 border-sky hover:bg-blue-100 rounded mt-0.5 shrink-0"></button>
-            <div class="flex-1"><div class="font-black text-navy-dark text-sm">${c ? c.name : 'عميل محذوف'}</div><div class="text-xs text-gray-600 mt-1">${t.notes}</div><div class="text-[10px] text-sky font-black mt-1">${t.date}</div></div>
+        const cust = appData.customers.find(c => c.id === t.customerId);
+        const isToday = t.date === today;
+        const isOverdue = t.date < today;
+        const dateBadge = isOverdue ? '<span class="badge badge-red">متأخرة</span>'
+            : isToday ? '<span class="badge badge-yellow">اليوم</span>'
+            : `<span class="badge badge-gray">${t.date || '-'}</span>`;
+        return `<div class="task-clickable p-3 rounded border border-gray-200 flex items-start gap-3" onclick="openCustomerDetail('${t.customerId}')">
+            <button onclick="event.stopPropagation();toggleTask('${t.id}')" class="mt-0.5 w-6 h-6 rounded border-2 border-sky flex items-center justify-center shrink-0 hover:bg-blue-100 transition-all"><i class="fa-solid fa-check text-xs text-sky opacity-0 hover:opacity-100"></i></button>
+            <div class="flex-1 min-w-0">
+                <div class="flex flex-wrap items-center gap-2 mb-1"><b class="text-sm text-navy-dark">${cust ? cust.name : 'عميل محذوف'}</b>${dateBadge}</div>
+                <div class="text-xs text-gray-600 font-bold truncate">${t.notes || ''}</div>
+            </div>
         </div>`;
     }).join('');
 }
+
 function renderFullTasks() {
     const container = document.getElementById('fullTasksContainer');
     if (!container) return;
-    if (appData.tasks.length === 0) { container.innerHTML = `<div class="text-center text-gray-400 text-sm py-12 font-bold border border-dashed border-gray-300 rounded">لا توجد مهام.</div>`; return; }
-    const sorted = [...appData.tasks].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     const today = new Date().toISOString().split('T')[0];
-    container.innerHTML = sorted.map(t => {
-        const c = appData.customers.find(x => x.id === t.customerId);
-        const overdue = !t.completed && t.date < today;
-        return `<div class="flex items-start gap-3 p-4 ${t.completed ? 'bg-green-50 border-green-300' : overdue ? 'bg-red-50 border-red-300' : 'bg-white border-gray-200'} border rounded task-clickable" onclick="openCustomerDetail('${t.customerId}')">
-            <button onclick="event.stopPropagation();toggleTaskDone('${t.id}')" class="w-6 h-6 border-2 ${t.completed ? 'bg-green-500 border-green-500 text-white' : 'border-sky hover:bg-blue-100'} rounded mt-0.5 shrink-0 flex items-center justify-center">${t.completed ? '<i class="fa-solid fa-check text-xs"></i>' : ''}</button>
-            <div class="flex-1"><div class="flex justify-between items-start gap-3">
-                <div>
-                    <div class="font-black text-navy-dark text-sm ${t.completed ? 'line-through opacity-60' : ''}">${c ? c.name : 'عميل محذوف'}</div>
-                    <div class="text-xs text-gray-600 mt-1">${t.notes}</div>
+    const pending = (appData.tasks || []).filter(t => !t.completed).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    const completed = (appData.tasks || []).filter(t => t.completed).slice(-15).reverse();
+    if (pending.length === 0 && completed.length === 0) {
+        container.innerHTML = `<div class="text-center text-gray-400 py-12 font-bold"><i class="fa-solid fa-clipboard-list text-5xl mb-3 text-gray-300"></i><div>لا توجد مهام حالياً</div></div>`;
+        return;
+    }
+    let html = '';
+    if (pending.length) {
+        html += `<div class="text-xs font-black text-ink-muted uppercase mb-3 tracking-widest"><i class="fa-solid fa-hourglass-half text-amber-500 ml-1"></i> قيد التنفيذ (${pending.length})</div>`;
+        html += pending.map(t => {
+            const cust = appData.customers.find(c => c.id === t.customerId);
+            const isToday = t.date === today;
+            const isOverdue = t.date < today;
+            const dateBadge = isOverdue ? '<span class="badge badge-red">متأخرة</span>'
+                : isToday ? '<span class="badge badge-yellow">اليوم</span>'
+                : `<span class="badge badge-gray">${t.date || '-'}</span>`;
+            return `<div class="task-clickable p-3 rounded border border-gray-200 mb-2 flex items-start gap-3" onclick="openCustomerDetail('${t.customerId}')">
+                <button onclick="event.stopPropagation();toggleTask('${t.id}')" class="mt-0.5 w-6 h-6 rounded border-2 border-sky flex items-center justify-center shrink-0 hover:bg-blue-100"><i class="fa-solid fa-check text-xs text-transparent hover:text-sky"></i></button>
+                <div class="flex-1">
+                    <div class="flex flex-wrap items-center gap-2 mb-1"><b class="text-sm text-navy-dark">${cust ? cust.name : 'عميل محذوف'}</b>${dateBadge}</div>
+                    <div class="text-xs text-gray-600 font-bold">${t.notes || ''}</div>
+                    <div class="text-[10px] text-gray-400 font-bold mt-1"><i class="fa-solid fa-user ml-1"></i>${t.byName || '-'}</div>
                 </div>
-                <div class="text-[10px] font-black ${overdue ? 'text-red-600' : 'text-gray-500'} shrink-0 text-left">${t.date}${overdue ? '<br>(متأخرة)' : ''}${t.completed ? '<br>✓ تمت' : ''}</div>
-            </div></div>
-            <button onclick="event.stopPropagation();deleteTask('${t.id}')" class="text-red-400 hover:text-red-600 p-1"><i class="fa-solid fa-trash text-xs"></i></button>
-        </div>`;
-    }).join('');
+            </div>`;
+        }).join('');
+    }
+    if (completed.length) {
+        html += `<div class="text-xs font-black text-ink-muted uppercase mt-6 mb-3 tracking-widest"><i class="fa-solid fa-circle-check text-green-600 ml-1"></i> مكتملة حديثاً (${completed.length})</div>`;
+        html += completed.map(t => {
+            const cust = appData.customers.find(c => c.id === t.customerId);
+            return `<div class="p-3 rounded border border-gray-200 mb-2 flex items-start gap-3 opacity-60">
+                <div class="mt-0.5 w-6 h-6 rounded border-2 border-green-500 bg-green-500 flex items-center justify-center shrink-0"><i class="fa-solid fa-check text-xs text-white"></i></div>
+                <div class="flex-1">
+                    <div class="flex flex-wrap items-center gap-2 mb-1"><b class="text-sm text-navy-dark line-through">${cust ? cust.name : 'عميل محذوف'}</b><span class="badge badge-green">مكتملة</span></div>
+                    <div class="text-xs text-gray-600 font-bold">${t.notes || ''}</div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+    container.innerHTML = html;
 }
-function toggleTaskDone(id) { const t = appData.tasks.find(x => x.id === id); if (t) { t.completed = !t.completed; saveData(); renderFullTasks(); renderDashboardTasks(); updateDashboard(); } }
-function deleteTask(id) { appData.tasks = appData.tasks.filter(t => t.id !== id); saveData(); renderFullTasks(); renderDashboardTasks(); updateDashboard(); }
 
-// ==================== SETTINGS ====================
-function renderSettingsLists() {
-    if (!isManager()) return;
-    const render = (id, arr, type) => {
-        const ul = document.getElementById(id);
-        if (!ul) return;
-        ul.innerHTML = arr.map((item, i) => `<li class="flex justify-between items-center p-3 bg-page border border-gray-200 rounded"><span>${item}</span><button onclick="removeSettingItem('${type}', ${i})" class="text-red-400 hover:text-red-600"><i class="fa-solid fa-trash text-xs"></i></button></li>`).join('') || '<li class="text-center text-gray-400 py-4 text-xs font-bold">لا يوجد عناصر</li>';
-    };
-    render('settingsVehiclesList', appData.config.vehicles, 'vehicles');
-    render('settingsChannelsList', appData.config.channels, 'channels');
-    render('settingsFinanceList', appData.config.financeEntities, 'financeEntities');
-    render('settingsFollowupList', appData.config.followupReasons, 'followupReasons');
-    render('settingsStagesList', appData.config.installmentStages, 'installmentStages');
-    render('settingsGovList', appData.config.governorates, 'governorates');
-}
-function addSettingItem(type) {
-    if (!isManager()) return;
-    const v = prompt('أدخل القيمة:');
-    if (!v || !v.trim()) return;
-    appData.config[type].push(v.trim());
-    saveData(); renderSettingsLists(); populateDropdowns(); populateFilterDropdowns();
-    logActivity('settings', `إضافة في ${type}: ${v}`);
-    showToast('تمت الإضافة');
-}
-function removeSettingItem(type, i) {
-    if (!isManager()) return;
-    if (!confirm('حذف؟')) return;
-    const removed = appData.config[type][i];
-    appData.config[type].splice(i, 1);
-    saveData(); renderSettingsLists(); populateDropdowns(); populateFilterDropdowns();
-    logActivity('settings', `حذف من ${type}: ${removed}`);
-    showToast('تم الحذف');
+function toggleTask(taskId) {
+    const t = appData.tasks.find(x => x.id === taskId);
+    if (!t) return;
+    t.completed = !t.completed;
+    saveData(); renderDashboardTasks(); renderFullTasks(); updateDashboard();
+    showToast(t.completed ? 'تم إتمام المهمة' : 'تم إرجاع المهمة');
 }
 
 // ==================== CHARTS ====================
 function initCharts() {
-    if (!document.getElementById('chartStatus')) return;
+    const customers = appData.customers || [];
+    const statusCounts = {};
+    customers.forEach(c => {
+        const prods = c.products || [];
+        if (prods.length === 0) { const s = c.status || 'مفتوحة'; statusCounts[s] = (statusCounts[s] || 0) + 1; }
+        else { prods.forEach(p => { const s = p.status || 'مفتوحة'; statusCounts[s] = (statusCounts[s] || 0) + 1; }); }
+    });
     if (statusChartInstance) statusChartInstance.destroy();
-    if (govChartInstance) govChartInstance.destroy();
-    if (vehicleChartInstance) vehicleChartInstance.destroy();
-    const cs = loadedCustomers.length ? loadedCustomers : appData.customers;
-    const statuses = ['مفتوحة', 'جاري التقسيط', 'منفذة', 'مفقودة'];
-    const sc = statuses.map(s => cs.reduce((acc, c) => acc + (c.products || []).filter(p => (p.status || '').includes(s)).length, 0));
     statusChartInstance = new Chart(document.getElementById('chartStatus'), {
         type: 'doughnut',
-        data: { labels: statuses, datasets: [{ data: sc, backgroundColor: ['#3b82f6', '#f59e0b', '#10b981', '#ef4444'], borderColor: '#fff', borderWidth: 3 }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#475569', font: { family: 'Cairo', weight: 'bold' }, padding: 15 } } } }
+        data: { labels: Object.keys(statusCounts).length ? Object.keys(statusCounts) : ['لا توجد بيانات'], datasets: [{ data: Object.values(statusCounts).length ? Object.values(statusCounts) : [1], backgroundColor: ['#3b82f6', '#f59e0b', '#22c55e', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'] }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Cairo', weight: 'bold', size: 11 }, padding: 12 } } } }
     });
-    const govs = appData.config.governorates;
-    const gc = govs.map(g => cs.filter(c => c.gov === g).length);
+    const govCounts = {};
+    customers.forEach(c => { const g = c.gov || 'غير محدد'; govCounts[g] = (govCounts[g] || 0) + 1; });
+    if (govChartInstance) govChartInstance.destroy();
     govChartInstance = new Chart(document.getElementById('chartGov'), {
         type: 'bar',
-        data: { labels: govs, datasets: [{ label: 'العملاء', data: gc, backgroundColor: '#1e40af', borderRadius: 4 }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#64748b', font: { family: 'Cairo', size: 10 } }, grid: { display: false } }, y: { ticks: { color: '#64748b' }, grid: { color: '#e2e8f0' }, beginAtZero: true } } }
+        data: { labels: Object.keys(govCounts), datasets: [{ label: 'عدد العملاء', data: Object.values(govCounts), backgroundColor: '#0ea5e9', borderRadius: 6 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true }, x: { ticks: { font: { family: 'Cairo', weight: 'bold' } } } } }
     });
-    const vehicles = appData.config.vehicles;
-    const vc = vehicles.map(v => cs.reduce((acc, c) => acc + (c.products || []).filter(p => p.vehicle === v).length, 0));
+    const vehCounts = {};
+    customers.forEach(c => { (c.products || []).forEach(p => { const v = p.vehicle || 'غير محدد'; vehCounts[v] = (vehCounts[v] || 0) + 1; }); });
+    if (vehicleChartInstance) vehicleChartInstance.destroy();
     vehicleChartInstance = new Chart(document.getElementById('chartVehicles'), {
         type: 'bar',
-        data: { labels: vehicles, datasets: [{ label: 'الطلبات', data: vc, backgroundColor: '#0ea5e9', borderRadius: 4 }] },
-        options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#64748b' }, grid: { color: '#e2e8f0' }, beginAtZero: true }, y: { ticks: { color: '#64748b', font: { family: 'Cairo', weight: 'bold' } }, grid: { display: false } } } }
+        data: { labels: Object.keys(vehCounts), datasets: [{ label: 'عدد الطلبات', data: Object.values(vehCounts), backgroundColor: '#1e40af', borderRadius: 6 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true }, x: { ticks: { font: { family: 'Cairo', weight: 'bold' } } } } }
     });
+}
+
+// ==================== SETTINGS ====================
+function renderSettingsLists() {
+    const config = appData.config;
+    const renderList = (id, arr, key) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (!arr || arr.length === 0) { el.innerHTML = '<li class="text-center text-gray-400 py-4 font-bold text-xs">لا توجد عناصر</li>'; return; }
+        el.innerHTML = arr.map((item, i) => `<li class="flex justify-between items-center bg-page px-3 py-2 rounded border border-gray-200 hover:border-sky"><span>${item}</span><button onclick="removeSettingItem('${key}',${i})" class="text-red-400 hover:text-red-600 p-1 transition-all"><i class="fa-solid fa-xmark"></i></button></li>`).join('');
+    };
+    renderList('settingsVehiclesList', config.vehicles, 'vehicles');
+    renderList('settingsChannelsList', config.channels, 'channels');
+    renderList('settingsFinanceList', config.financeEntities, 'financeEntities');
+    renderList('settingsFollowupList', config.followupReasons, 'followupReasons');
+    renderList('settingsStagesList', config.installmentStages, 'installmentStages');
+    renderList('settingsGovList', config.governorates, 'governorates');
+}
+
+function addSettingItem(key) {
+    if (!isManager()) return showToast('للمدير فقط', 'error');
+    const labels = { vehicles: 'اسم المركبة', channels: 'اسم قناة التواصل', financeEntities: 'اسم جهة التقسيط', followupReasons: 'سبب المتابعة', installmentStages: 'اسم المرحلة', governorates: 'اسم المحافظة' };
+    const val = prompt('أدخل ' + (labels[key] || 'القيمة') + ':');
+    if (!val || !val.trim()) return;
+    const trimmed = val.trim();
+    if (!appData.config[key]) appData.config[key] = [];
+    if (appData.config[key].includes(trimmed)) return showToast('موجود بالفعل', 'error');
+    appData.config[key].push(trimmed);
+    logActivity('settings', `إضافة ${labels[key]}: ${trimmed}`);
+    saveData(); renderSettingsLists(); populateDropdowns(); populateFilterDropdowns();
+    showToast('✅ تمت الإضافة');
+}
+
+function removeSettingItem(key, index) {
+    if (!isManager()) return showToast('للمدير فقط', 'error');
+    const arr = appData.config[key];
+    if (!arr || !arr[index]) return;
+    const removed = arr[index];
+    if (!confirm(`حذف "${removed}"؟`)) return;
+    arr.splice(index, 1);
+    logActivity('settings', `حذف ${removed}`);
+    saveData(); renderSettingsLists(); populateDropdowns(); populateFilterDropdowns();
+    showToast('تم الحذف');
 }
 
 // ==================== TOAST ====================
 function showToast(msg, type = 'success') {
-    const c = document.getElementById('toastContainer');
-    const el = document.createElement('div');
-    el.className = `toast-anim pointer-events-auto px-5 py-3 rounded shadow-lg font-black text-sm ${type === 'error' ? 'bg-red-500 text-white' : 'bg-navy-dark text-white'}`;
-    el.innerHTML = `<i class="fa-solid ${type === 'error' ? 'fa-circle-exclamation' : 'fa-circle-check'} ml-2"></i>${msg}`;
-    c.appendChild(el);
-    setTimeout(() => { el.style.transition = 'opacity 0.3s'; el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3000);
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+    const colors = { success: 'bg-green-600', error: 'bg-red-600', info: 'bg-sky', warning: 'bg-amber-500' };
+    const icons = { success: 'fa-circle-check', error: 'fa-circle-xmark', info: 'fa-circle-info', warning: 'fa-triangle-exclamation' };
+    const toast = document.createElement('div');
+    toast.className = `${colors[type] || colors.success} text-white px-5 py-3 rounded-lg shadow-lg font-black text-sm flex items-center gap-2 toast-anim pointer-events-auto max-w-sm`;
+    toast.innerHTML = `<i class="fa-solid ${icons[type] || icons.success}"></i> <span>${msg}</span>`;
+    container.appendChild(toast);
+    setTimeout(() => { toast.style.transition = 'all 0.3s'; toast.style.opacity = '0'; toast.style.transform = 'translateX(-100%)'; setTimeout(() => toast.remove(), 300); }, 3200);
 }
 
+// ==================== KEYBOARD ====================
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { closeCustomerModal(); closeFollowupModal(); closeProductModal(); closeCustomerDetail(); closeEmployeeModal(); closeSheetsImportModal(); closeDeleteAllModal(); }
+    if (e.key === 'Escape') {
+        ['customerModal', 'employeeModal', 'followupModal', 'productModal', 'customerDetailModal', 'deleteAllModal', 'columnMappingModal'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el && !el.classList.contains('hidden')) { el.classList.add('hidden'); el.classList.remove('flex'); }
+        });
+    }
 });
 
-console.log('✅ AutoCRM v11.0 - Fast Loading + Delete All');
+// ==================== DRAG & DROP ====================
+(function initDragDrop() {
+    let dragCounter = 0;
+    const overlay = document.getElementById('dropOverlay');
+    const dropZone = document.getElementById('dropZone');
+    if (!overlay) return;
+    const isFileDrag = (e) => {
+        if (!e.dataTransfer) return false;
+        const types = e.dataTransfer.types;
+        if (!types) return false;
+        return Array.from(types).includes('Files');
+    };
+    window.addEventListener('dragenter', (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault(); e.stopPropagation();
+        dragCounter++;
+        if (!currentUser || currentUser.role !== 'manager') return;
+        const mainLayout = document.getElementById('mainLayout');
+        if (!mainLayout || mainLayout.classList.contains('hidden')) return;
+        overlay.classList.add('active');
+    });
+    window.addEventListener('dragover', (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault(); e.stopPropagation();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+        if (overlay.classList.contains('active')) dropZone.classList.add('dragover');
+    });
+    window.addEventListener('dragleave', (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault(); e.stopPropagation();
+        dragCounter--;
+        if (dragCounter <= 0) { dragCounter = 0; overlay.classList.remove('active'); dropZone.classList.remove('dragover'); }
+    });
+    window.addEventListener('drop', async (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault(); e.stopPropagation();
+        dragCounter = 0;
+        overlay.classList.remove('active'); dropZone.classList.remove('dragover');
+        if (!currentUser || currentUser.role !== 'manager') { showToast('للمدير فقط', 'error'); return; }
+        const mainLayout = document.getElementById('mainLayout');
+        if (!mainLayout || mainLayout.classList.contains('hidden')) return;
+        const files = e.dataTransfer.files;
+        if (!files || files.length === 0) return;
+        const file = files[0];
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (!['xlsx', 'xls', 'csv'].includes(ext)) { showToast('صيغة الملف غير مدعومة!', 'error'); return; }
+        await processImportFile(file);
+    });
+    window.addEventListener('dragover', (e) => { if (isFileDrag(e)) e.preventDefault(); }, false);
+    window.addEventListener('drop', (e) => { if (isFileDrag(e)) e.preventDefault(); }, false);
+})();
+
+window.addEventListener('beforeunload', () => {
+    if (currentUser && currentUser.roleType === 'admin') saveToLocal();
+});
+
+console.log('%c🚗 AutoCRM v19.0', 'color:#1e40af;font-size:18px;font-weight:900');
+console.log('%c✅ جاهز للعمل', 'color:#10b981;font-weight:bold');
+console.log('%c📋 نظام ربط الأعمدة + اختيار الورقة', 'color:#8b5cf6;font-weight:bold');
 </script>
 </body>
 </html>
